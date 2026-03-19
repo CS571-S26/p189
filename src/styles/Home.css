@@ -1,0 +1,34 @@
+
+.hero {
+    width: 192px;
+    height: 192px;
+    position: relative;
+}
+
+.hero img {
+    inset-inline: 0;
+    margin: 0 auto;
+    position: absolute;
+}
+
+.hero .react {
+    z-index: 2;
+    top: 36px;
+    height: 36px;
+    transform: perspective(1000px) rotateZ(300deg) rotateX(40deg) rotateY(40deg) scale(1.5);
+    filter: drop-shadow(0 0 1.5em #61dafbaa);
+}
+
+.hero .base {
+    z-index: 1;
+    width: 192px;
+    position: relative;
+}
+
+.hero .vite {
+    z-index: 0;
+    top: 121px;
+    height: 30px;
+    transform: perspective(1000px) rotateZ(300deg) rotateX(40deg) rotateY(40deg) scale(1);
+    filter: drop-shadow(0 0 1em #646cffaa);
+}
