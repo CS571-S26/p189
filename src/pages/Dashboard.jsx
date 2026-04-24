@@ -1,72 +1,64 @@
 
 import {Box, Typography, Stack, Grow} from "@mui/material";
 import InboxIcon from "@mui/icons-material/Inbox";
-import PushPinIcon from "@mui/icons-material/PushPin";
 import TaskCard from "../components/TaskCard";
 
-export default function Dashboard({tasks, tab, onTogglePin, onToggleDone, onDelete}) {
+const GRID_SX = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+    gap: 2
+};
+
+export default function Dashboard({tasks, onTogglePin, onToggleDone, onDelete, onEditTitle}) {
 
     const isEmpty = tasks.length === 0;
-
-    const title = tab === "pending" ? "Pending Tasks" : "Completed History";
 
     const pinnedTasks = tasks.filter((t) => t.isPinned);
 
     const otherTasks = tasks.filter((t) => !t.isPinned);
 
     return (
-        <Box component="main" sx={{flex: 1, px: {xs: 2, sm: 4}, py: 4, overflowY: "auto"}}>
-            <Typography variant="h5" sx={{mb: 3}}>
-                {title}
-            </Typography>
+        <Box component="main" sx={{flex: 1, px: {xs: 2, sm: 4}, pt: {xs: 2, sm: 3}, pb: 12, overflowY: "auto", maxWidth: 1400, width: "100%", mx: "auto"}}>
             {isEmpty ? (
-                <Stack alignItems="center" justifyContent="center" sx={{mt: 12, color: "text.secondary"}}>
-                    <InboxIcon sx={{fontSize: 56, mb: 1.5, opacity: 0.28}} />
+                <Stack alignItems="center" justifyContent="center" sx={{mt: 16, color: "text.secondary"}}>
+                    <InboxIcon sx={{fontSize: 56, mb: 1.5, opacity: 0.28}}/>
                     <Typography variant="body1">
-                        {tab === "pending" ? "All clear — no pending tasks!" : "No completed tasks yet."}
+                        All clear — no pending tasks!
+                    </Typography>
+                    <Typography variant="body2" sx={{mt: 0.5, opacity: 0.8}}>
+                        Click the + button to create one.
                     </Typography>
                 </Stack>
-            ) : tab === "history" ? (
-                <Stack spacing={1.5}>
-                    {tasks.map((task, i) => (
-                        <Grow in key={task.id} timeout={250 + i * 80}>
-                            <TaskCard task={task} onTogglePin={onTogglePin} onToggleDone={onToggleDone} onDelete={onDelete}/>
-                        </Grow>
-                    ))}
-                </Stack>
             ) : (
-                <Stack spacing={3}>
+                <Stack spacing={4}>
                     {pinnedTasks.length > 0 && (
                         <Box>
-                            <Stack direction="row" alignItems="center" spacing={0.8} sx={{mb: 1.5}}>
-                                <PushPinIcon sx={{fontSize: 18, color: "primary.main"}} />
-                                <Typography variant="body2" sx={{color: "primary.main", fontWeight: 600, letterSpacing: "0.04em"}}>
-                                    PINNED
-                                </Typography>
-                            </Stack>
-                            <Stack spacing={1.5}>
+                            <Typography variant="caption" sx={{display: "block", color: "primary.main", fontWeight: 600, letterSpacing: "0.08em", fontSize: 11, mb: 2}}>
+                                PINNED · {pinnedTasks.length}
+                            </Typography>
+                            <Box sx={GRID_SX}>
                                 {pinnedTasks.map((task, i) => (
-                                    <Grow in key={task.id} timeout={250 + i * 80}>
-                                        <TaskCard task={task} onTogglePin={onTogglePin} onToggleDone={onToggleDone} onDelete={onDelete}/>
+                                    <Grow in key={task.id} timeout={220 + i * 60}>
+                                        <TaskCard task={task} onTogglePin={onTogglePin} onToggleDone={onToggleDone} onDelete={onDelete} onEditTitle={onEditTitle}/>
                                     </Grow>
                                 ))}
-                            </Stack>
+                            </Box>
                         </Box>
                     )}
                     {otherTasks.length > 0 && (
                         <Box>
                             {pinnedTasks.length > 0 && (
-                                <Typography variant="body2" sx={{color: "text.secondary", fontWeight: 600, letterSpacing: "0.04em", mb: 1.5}}>
-                                    OTHERS
+                                <Typography variant="caption" sx={{display: "block", color: "text.secondary", fontWeight: 600, letterSpacing: "0.08em", fontSize: 11, mb: 2}}>
+                                    OTHERS · {otherTasks.length}
                                 </Typography>
                             )}
-                            <Stack spacing={1.5}>
+                            <Box sx={GRID_SX}>
                                 {otherTasks.map((task, i) => (
-                                    <Grow in key={task.id} timeout={250 + i * 80}>
-                                        <TaskCard task={task} onTogglePin={onTogglePin} onToggleDone={onToggleDone} onDelete={onDelete}/>
+                                    <Grow in key={task.id} timeout={220 + i * 60}>
+                                        <TaskCard task={task} onTogglePin={onTogglePin} onToggleDone={onToggleDone} onDelete={onDelete} onEditTitle={onEditTitle}/>
                                     </Grow>
                                 ))}
-                            </Stack>
+                            </Box>
                         </Box>
                     )}
                 </Stack>

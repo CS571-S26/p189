@@ -59,7 +59,7 @@ export default function LandingPage({onLogin, isLoggedIn}) {
                     {isLoggedIn ? "Go to Dashboard" : "Get Started"}
                 </Button>
                 {!isLoggedIn && (
-                    <Button variant="outlined" size="large" onClick={handleLogin} sx={{ borderColor: "#DADCE0", color: "text.primary", "&:hover": {bgcolor: "#F1F3F4", borderColor: "#DADCE0"}}}>
+                    <Button variant="outlined" size="large" onClick={handleLogin} sx={{borderColor: "#DADCE0", color: "text.primary", "&:hover": {bgcolor: "#F1F3F4", borderColor: "#DADCE0"}}}>
                         Mock Login
                     </Button>
                 )}
