@@ -1,16 +1,149 @@
-# React + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+# TaskFlow
 
-Currently, two official plugins are available:
+TaskFlow is a modern task management and productivity application built with React, Vite, MUI, and Tailwind CSS.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The project focuses on fluid interactions, visual consistency, responsive layouts, and a refined glass-inspired interface system designed for local-first productivity workflows.
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## ✨ Features
 
-## Expanding the ESLint configuration
+- Task creation and management
+- Recurring task templates
+- Subtask workflow support
+- Task sorting and filtering
+- Tag management system
+- Task history tracking
+- Responsive dashboard layout
+- Glassmorphism-inspired UI system
+- Smooth modal and interaction animations
+- Local-first persistence
+- GitHub Pages deployment support
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+---
+
+## 🖼️ Design Goals
+
+TaskFlow combines:
+
+- Material You interaction principles
+- Modern SaaS dashboard aesthetics
+- Lightweight glass-style surfaces
+- Responsive motion design
+- Consistent visual hierarchy
+- Performance-conscious UI rendering
+
+---
+
+## 🛠️ Tech Stack
+
+### Frontend
+
+- React 19
+- Vite 8
+- React Router 7
+
+### UI / Styling
+
+- MUI 9
+- Tailwind CSS 4
+- Emotion
+
+### Utilities
+
+- date-fns
+
+---
+
+## 📁 Project Structure
+
+```txt
+src/
+├── components/
+│   ├── AddTaskModal.jsx
+│   ├── FrequencySelector.jsx
+│   ├── LogoMark.jsx
+│   ├── Navigation.jsx
+│   ├── PriorityBadge.jsx
+│   ├── Sidebar.jsx
+│   ├── SortingToolbar.jsx
+│   ├── StatusToggle.jsx
+│   ├── SubtaskDraftEditor.jsx
+│   ├── SubtaskList.jsx
+│   ├── TagManager.jsx
+│   └── TaskCard.jsx
+│
+├── pages/
+│   ├── Dashboard.jsx
+│   ├── HistoryPage.jsx
+│   ├── LandingPage.jsx
+│   └── SchedulePage.jsx
+│
+├── javascripts/
+│   └── shared.js
+│
+├── tailwind/
+│   └── tailwind.css
+│
+└── main.jsx
+```
+
+---
+
+## 🚀 Getting Started
+
+### Install Dependencies
+
+```bash
+npm install
+```
+
+### Start Development Server
+
+```bash
+npm run dev
+```
+
+### Build for Production
+
+```bash
+npm run build
+```
+
+### Preview Production Build
+
+```bash
+npm run preview
+```
+
+---
+
+## ⚡ Development Notes
+
+TaskFlow is currently focused on:
+
+- Interaction refinement
+- Animation smoothness
+- Rendering optimization
+- Visual consistency
+- Component system cleanup
+- Local-first workflow stability
+
+---
+
+## 📦 Deployment
+
+This project is designed to work as a static frontend application and can be deployed directly to:
+
+- GitHub Pages
+- Vercel
+- Netlify
+
+No backend service is required.
+
+---
+
+## 📄 License
+
+This project is intended for personal learning, UI experimentation, and frontend architecture exploration.

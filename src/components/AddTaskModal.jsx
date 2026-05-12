@@ -1,207 +1,461 @@
 
-import {useState, useEffect} from "react";
-import {Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Stack, ToggleButtonGroup, ToggleButton, Typography, Box, IconButton, Tooltip, Chip, Switch, FormControlLabel, Collapse} from "@mui/material";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import AddIcon from "@mui/icons-material/Add";
+import {useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect, memo, startTransition} from "react";
+import {Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Stack, Box, ToggleButtonGroup, ToggleButton, Typography, Switch, FormControlLabel, Collapse} from "@mui/material";
+import {DateTimePicker} from "@mui/x-date-pickers/DateTimePicker";
+import {renderTimeViewClock} from "@mui/x-date-pickers/timeViewRenderers";
 
-const PRIORITY_OPTIONS = [
-    {value: "high", label: "High", color: "#D93025"},
-    {value: "medium", label: "Medium", color: "#E8710A"},
-    {value: "low", label: "Low", color: "#1E8E3E"}
-];
+import FrequencySelector from "./FrequencySelector";
+import SubtaskDraftEditor from "./SubtaskDraftEditor";
 
-const WEEK_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+import {PRIORITY_OPTIONS, LABEL_SX, defaultDeadline, defaultTriggerTime, toPickerDate, fromPickerDate, PICKER_SLOT_PROPS, uid, MOTION_FAST, MOTION_BASE, MOTION_EASE, priorityToggleSx, scheduleBackgroundTask, cancelBackgroundTask} from "../javascripts/shared";
 
 const EMPTY_FORM = {title: "", tag: "Default", priority: "medium", deadline: ""};
 
 const EMPTY_SCHEDULE = {frequency: "weekly", weekDays: [1, 3, 5], monthDays: [1]};
 
-const SECTION_LABEL_SX = {fontFamily: '"JetBrains Mono", monospace', color: "text.secondary", fontWeight: 500, letterSpacing: "0.10em", fontSize: 10, textTransform: "uppercase"};
+const BG = "#FBFCFE";
+
+const EDGE_COLOR = "251, 252, 254";
+
+const PAPER_SX = {maxHeight: "92vh", display: "flex", flexDirection: "column", bgcolor: BG, backgroundColor: BG, backgroundImage: "none", backdropFilter: "none", WebkitBackdropFilter: "none", contain: "layout style", overflow: "hidden", isolation: "isolate"};
+
+const TITLE_SX = {pb: 1, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.020em", flexShrink: 0};
+
+const SCROLL_SHELL_SX = {flex: "1 1 auto", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0, backgroundColor: BG, isolation: "isolate"};
+
+const EDGE_BASE_SX = {position: "absolute", left: 0, right: 0, zIndex: 1, pointerEvents: "none", transition: `opacity 120ms ${MOTION_EASE}`, willChange: "opacity"};
+
+const TOP_EDGE_SX = {...EDGE_BASE_SX, top: 0, height: 36, background: `linear-gradient(to bottom, rgba(${EDGE_COLOR}, 0.98), rgba(${EDGE_COLOR}, 0))`};
+
+const BOTTOM_EDGE_SX = {...EDGE_BASE_SX, bottom: 0, height: 40, background: `linear-gradient(to top, rgba(${EDGE_COLOR}, 0.98), rgba(${EDGE_COLOR}, 0))`};
+
+const CONTENT_SX = {
+    pt: "8px !important",
+    pb: "24px !important",
+    overflowX: "hidden",
+    overflowY: "auto",
+    flex: "1 1 auto",
+    overscrollBehavior: "contain",
+    WebkitOverflowScrolling: "touch",
+    scrollBehavior: "auto",
+    backgroundColor: BG,
+    "&::-webkit-scrollbar": {display: "none"},
+    scrollbarWidth: "none",
+    msOverflowStyle: "none"
+};
+
+const ACTIONS_SX = {px: 3, pt: 1.25, pb: 2.5, flexShrink: 0, bgcolor: BG, backgroundColor: BG, backgroundImage: "linear-gradient(to bottom, rgba(251, 252, 254, 0.96), #FBFCFE 38%)", borderTop: 0, boxShadow: "0 -10px 22px -22px rgba(15, 24, 40, 0.22)"};
+
+const SWITCH_LABEL_SX = {fontWeight: 600, fontSize: "0.875rem", letterSpacing: "-0.005em"};
+
+const FIELD_ROW_SX = {contain: "layout style"};
+
+const SCHEDULE_BOX_SX = {pt: 1, px: 0.5, pb: 2, contain: "layout style", isolation: "isolate"};
+
+const SCHEDULE_PLACEHOLDER_SX = {height: 0, overflow: "hidden", pointerEvents: "none", visibility: "hidden"};
+
+const TRANSITION_DURATION = {enter: MOTION_BASE, exit: MOTION_FAST};
+
+const TITLE_INPUT_PROPS = {
+    htmlInput: {"aria-label": "Task title", maxLength: 120}
+};
+
+const TAG_INPUT_PROPS = {
+    htmlInput: {"aria-label": "Task tag", maxLength: 24}
+};
+
+const DEADLINE_SLOT_PROPS = {
+
+    ...PICKER_SLOT_PROPS,
+
+    toolbar: {hidden: false},
+
+    layout: {
+
+        sx: {
+            "& .MuiTimeClock-root": {margin: "auto"}
+        }
+    },
+
+    textField: {size: "small", fullWidth: true, helperText: "Defaults to one hour from now"}
+
+};
+
+const extractTime = (deadline) => (deadline?.includes("T") ? deadline.slice(11, 16) : "");
+
+const DeadlineField = memo(function DeadlineField({value, onChange}) {
+
+    const pickerValue = useMemo(() => toPickerDate(value), [value]);
+
+    return <DateTimePicker label="Deadline" value={pickerValue} onChange={onChange} ampm={false} viewRenderers={{hours: renderTimeViewClock, minutes: renderTimeViewClock}} closeOnSelect slotProps={DEADLINE_SLOT_PROPS}/>;
+
+});
+
+const PriorityPicker = memo(function PriorityPicker({value, onChange}) {
+
+    return (
+        <Stack spacing={1} sx={FIELD_ROW_SX}>
+            <Typography sx={LABEL_SX}>Priority</Typography>
+            <ToggleButtonGroup value={value} exclusive onChange={onChange} size="small" fullWidth aria-label="Task priority">
+                {PRIORITY_OPTIONS.map((p) => (
+                    <ToggleButton key={p.value} value={p.value} sx={priorityToggleSx(p)}>
+                        {p.label}
+                    </ToggleButton>
+                ))}
+            </ToggleButtonGroup>
+        </Stack>
+    );
+});
+
+const ScheduleOptions = memo(function ScheduleOptions({show, ready, schedule, onFrequencyChange, onWeekDaysChange, onMonthDaysChange}) {
+
+    if (!ready && !show) return <Box aria-hidden sx={SCHEDULE_PLACEHOLDER_SX}/>;
+
+    return (
+        <Collapse in={show} timeout={TRANSITION_DURATION} unmountOnExit={false} mountOnEnter={false} sx={{overflow: "visible", "& .MuiCollapse-wrapper": {overflow: "visible"}, "& .MuiCollapse-wrapperInner": {overflow: "visible"}}}>
+            <Box sx={{...SCHEDULE_BOX_SX, opacity: show ? 1 : 0, transform: show ? "translateY(0)" : "translateY(-4px)", transition: `opacity ${MOTION_BASE}ms ${MOTION_EASE}, transform ${MOTION_BASE}ms ${MOTION_EASE}`}}>
+                <FrequencySelector frequency={schedule.frequency} weekDays={schedule.weekDays} monthDays={schedule.monthDays} onFrequencyChange={onFrequencyChange} onWeekDaysChange={onWeekDaysChange} onMonthDaysChange={onMonthDaysChange}/>
+            </Box>
+        </Collapse>
+    );
+});
+
+function createDraft(initialTask) {
+    return {form: initialTask ? {title: initialTask.title, tag: initialTask.tag, priority: initialTask.priority, deadline: initialTask.deadline || ""} : {...EMPTY_FORM, deadline: defaultDeadline()}, subtasks: initialTask?.subtasks?.map((s) => ({...s})) || [], saveAsTemplate: false, schedule: EMPTY_SCHEDULE, submitting: false};
+}
 
 export default function AddTaskModal({open, onClose, onSubmit, onAddSchedule, initialTask}) {
-    const [form, setForm] = useState(EMPTY_FORM);
 
-    const [subtasks, setSubtasks] = useState([]);
+    const [draft, setDraft] = useState(() => createDraft(initialTask));
 
-    const [subtaskDraft, setSubtaskDraft] = useState("");
+    const [edges, setEdges] = useState({top: false, bottom: false});
 
-    const [saveAsTemplate, setSaveAsTemplate] = useState(false);
+    const [scheduleReady, setScheduleReady] = useState(false);
 
-    const [schedule, setSchedule] = useState(EMPTY_SCHEDULE);
+    const [pickerReady, setPickerReady] = useState(false);
+
+    const contentRef = useRef(null);
+
+    const submittingRef = useRef(false);
+
+    const focusFrameRef = useRef(0);
+
+    const scrollFrameRef = useRef(0);
+
+    const scheduleIdleRef = useRef(null);
+
+    const scheduleFrameRef = useRef(0);
+
+    const pickerFrameRef = useRef(0);
+
+    const titleInputRef = useRef(null);
+
+    const {form, subtasks, saveAsTemplate, schedule, submitting} = draft;
 
     const isEdit = Boolean(initialTask);
 
+    const measureEdges = useCallback(() => {
+
+        const node = contentRef.current;
+
+        if (!node) return;
+
+        const overflow = node.scrollHeight - node.clientHeight > 2;
+
+        const next = {top: overflow && node.scrollTop > 2, bottom: overflow && node.scrollTop + node.clientHeight < node.scrollHeight - 2};
+
+        setEdges((prev) => (prev.top === next.top && prev.bottom === next.bottom ? prev : next));
+
+    }, []);
+
     useEffect(() => {
-        if (open) {
-            setForm(initialTask ? {title: initialTask.title, tag: initialTask.tag, priority: initialTask.priority, deadline: initialTask.deadline || ""} : EMPTY_FORM);
 
-            setSubtasks(initialTask?.subtasks?.map((s) => ({...s})) || []);
+        if (!open) {
 
-            setSubtaskDraft("");
+            setEdges({top: false, bottom: false});
 
-            setSaveAsTemplate(false);
+            setScheduleReady(false);
 
-            setSchedule(EMPTY_SCHEDULE);
+            setPickerReady(false);
+
+            cancelBackgroundTask(scheduleIdleRef.current);
+
+            if (focusFrameRef.current) cancelAnimationFrame(focusFrameRef.current);
+
+            if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+
+            if (scheduleFrameRef.current) cancelAnimationFrame(scheduleFrameRef.current);
+
+            if (pickerFrameRef.current) cancelAnimationFrame(pickerFrameRef.current);
+
+            scheduleIdleRef.current = null;
+
+            scheduleFrameRef.current = 0;
+
+            pickerFrameRef.current = 0;
+
+            focusFrameRef.current = 0;
+
+            scrollFrameRef.current = 0;
+
+            return undefined;
+
         }
-    }, [open, initialTask]);
 
-    const handleSubmit = () => {
+        submittingRef.current = false;
+
+        setPickerReady(false);
+
+        setDraft(createDraft(initialTask));
+
+        focusFrameRef.current = requestAnimationFrame(() => {
+
+            focusFrameRef.current = 0;
+
+            titleInputRef.current?.focus({preventScroll: true});
+
+            measureEdges();
+
+            pickerFrameRef.current = requestAnimationFrame(() => {
+
+                pickerFrameRef.current = 0;
+
+                setPickerReady(true);
+
+            });
+        });
+
+        scheduleIdleRef.current = scheduleBackgroundTask(() => {
+
+            scheduleIdleRef.current = null;
+
+            setScheduleReady(true);
+
+        });
+
+        return () => {
+
+            cancelBackgroundTask(scheduleIdleRef.current);
+
+            if (focusFrameRef.current) cancelAnimationFrame(focusFrameRef.current);
+
+            if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+
+            if (scheduleFrameRef.current) cancelAnimationFrame(scheduleFrameRef.current);
+
+            if (pickerFrameRef.current) cancelAnimationFrame(pickerFrameRef.current);
+
+            scheduleIdleRef.current = null;
+
+            scheduleFrameRef.current = 0;
+
+            pickerFrameRef.current = 0;
+
+            focusFrameRef.current = 0;
+
+            scrollFrameRef.current = 0;
+
+        };
+    }, [open, initialTask, measureEdges]);
+
+    useLayoutEffect(() => {
+
+        if (!open || !contentRef.current) return undefined;
+
+        const node = contentRef.current;
+
+        let frame = 0;
+
+        const scheduleMeasure = () => {
+
+            if (frame) return;
+
+            frame = requestAnimationFrame(() => {
+
+                frame = 0;
+
+                measureEdges();
+
+            });
+        };
+
+        if (typeof ResizeObserver === "undefined") {
+
+            scheduleMeasure();
+
+            return () => {
+                if (frame) cancelAnimationFrame(frame);
+            };
+        }
+
+        const resizeObserver = new ResizeObserver(scheduleMeasure);
+
+        resizeObserver.observe(node);
+
+        if (node.firstElementChild) resizeObserver.observe(node.firstElementChild);
+
+        scheduleMeasure();
+
+        return () => {
+
+            resizeObserver.disconnect();
+
+            if (frame) cancelAnimationFrame(frame);
+
+        };
+    }, [open, subtasks.length, saveAsTemplate, measureEdges]);
+
+    const handleTitleChange = useCallback((e) => {
+
+        const title = e.target.value;
+
+        setDraft((prev) => (prev.form.title === title ? prev : {...prev, form: {...prev.form, title}}));
+
+    }, []);
+
+    const handleTagChange = useCallback((e) => {
+
+        const tag = e.target.value;
+
+        setDraft((prev) => (prev.form.tag === tag ? prev : {...prev, form: {...prev.form, tag}}));
+
+    }, []);
+
+    const handleDeadlineChange = useCallback((date) => {
+
+        const deadline = fromPickerDate(date);
+
+        setDraft((prev) => (prev.form.deadline === deadline ? prev : {...prev, form: {...prev.form, deadline}}));
+
+    }, []);
+
+    const handlePriorityChange = useCallback((_, priority) => {
+
+        if (!priority) return;
+
+        setDraft((prev) => (prev.form.priority === priority ? prev : {...prev, form: {...prev.form, priority}}));
+
+    }, []);
+
+    const handleTemplateChange = useCallback((e) => {
+
+        const saveAsTemplate = e.target.checked;
+
+        startTransition(() => {
+            setDraft((prev) => (prev.saveAsTemplate === saveAsTemplate ? prev : {...prev, saveAsTemplate}));
+        });
+
+        if (!saveAsTemplate || scheduleReady || scheduleFrameRef.current) return;
+
+        cancelBackgroundTask(scheduleIdleRef.current);
+
+        scheduleIdleRef.current = null;
+
+        scheduleFrameRef.current = requestAnimationFrame(() => {
+
+            scheduleFrameRef.current = 0;
+
+            setScheduleReady(true);
+
+        });
+    }, [scheduleReady]);
+
+    const handleFrequencyChange = useCallback((frequency) => {
+        setDraft((prev) => (prev.schedule.frequency === frequency ? prev : {...prev, schedule: {...prev.schedule, frequency}}));
+    }, []);
+
+    const handleWeekDaysChange = useCallback((weekDays) => {
+        setDraft((prev) => ({...prev, schedule: {...prev.schedule, weekDays}}));
+    }, []);
+
+    const handleMonthDaysChange = useCallback((monthDays) => {
+        setDraft((prev) => ({...prev, schedule: {...prev.schedule, monthDays}}));
+    }, []);
+
+    const addSubtask = useCallback((title) => {
+        setDraft((prev) => ({...prev, subtasks: [...prev.subtasks, {id: uid(), title, done: false, weight: 1}]}));
+    }, []);
+
+    const removeSubtask = useCallback((id) => {
+        setDraft((prev) => ({...prev, subtasks: prev.subtasks.filter((s) => s.id !== id)}));
+    }, []);
+
+    const handleSubmit = useCallback(() => {
+
         const title = form.title.trim();
 
-        if (!title) return;
+        if (!title || submittingRef.current) return;
+
+        submittingRef.current = true;
+
+        setDraft((prev) => ({...prev, submitting: true}));
 
         const payload = {...form, title, tag: form.tag.trim() || "Default", deadline: form.deadline || null, subtasks};
 
         onSubmit(payload);
 
         if (saveAsTemplate && onAddSchedule) {
-            onAddSchedule({title: payload.title, tag: payload.tag, priority: payload.priority, subtasks, ...schedule});
+
+            const time = extractTime(form.deadline) || defaultTriggerTime();
+
+            onAddSchedule({title: payload.title, tag: payload.tag, priority: payload.priority, triggerTime: time, subtasks, ...schedule});
+
         }
 
         onClose();
-    };
 
-    const handleKeyDown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey && e.target.tagName !== "TEXTAREA") {
-            e.preventDefault();
+    }, [form, onAddSchedule, onClose, onSubmit, saveAsTemplate, schedule, subtasks]);
 
-            if (e.target.getAttribute("aria-label") === "New subtask title") {
-                handleAddSubtask();
-            } else {
-                handleSubmit();
-            }
-        }
-    };
+    const handleKeyDown = useCallback((e) => {
 
-    const handleAddSubtask = () => {
-        const t = subtaskDraft.trim();
+        if (e.isComposing || e.nativeEvent?.isComposing || e.key !== "Enter" || e.shiftKey) return;
 
-        if (!t) return;
+        e.preventDefault();
 
-        setSubtasks((prev) => [...prev, {id: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title: t, done: false, weight: 1}]);
+        handleSubmit();
 
-        setSubtaskDraft("");
-    };
+    }, [handleSubmit]);
 
-    const toggleWeekDay = (day) => {
-        setSchedule((s) => {
-            const has = s.weekDays.includes(day);
+    const handleScroll = useCallback(() => {
 
-            const next = has ? s.weekDays.filter((d) => d !== day) : [...s.weekDays, day].sort((a, b) => a - b);
+        if (scrollFrameRef.current) return;
 
-            return {...s, weekDays: next.length > 0 ? next : [day]};
+        scrollFrameRef.current = requestAnimationFrame(() => {
+
+            scrollFrameRef.current = 0;
+
+            measureEdges();
+
         });
-    };
-
-    const toggleMonthDay = (day) => {
-        setSchedule((s) => {
-            const has = s.monthDays.includes(day);
-
-            const next = has ? s.monthDays.filter((d) => d !== day) : [...s.monthDays, day].sort((a, b) => a - b);
-
-            return {...s, monthDays: next.length > 0 ? next : [day]};
-        });
-    };
+    }, [measureEdges]);
 
     return (
-        <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" PaperProps={{sx: {maxHeight: "92vh"}}}>
-            <DialogTitle sx={{pb: 1, fontWeight: 700, fontSize: "1.25rem", letterSpacing: "-0.020em"}}>{isEdit ? "Edit Task" : "New Task"}</DialogTitle>
-            <DialogContent sx={{pt: "8px !important"}}>
-                <Stack spacing={2.5} sx={{mt: 0.5}}>
-                    <TextField label="Title" value={form.title} onChange={(e) => setForm({...form, title: e.target.value})} onKeyDown={handleKeyDown} autoFocus fullWidth size="small" inputProps={{"aria-label": "Task title", maxLength: 120}} />
-
-                    <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
-                        <TextField label="Tag" value={form.tag} onChange={(e) => setForm({...form, tag: e.target.value})} onKeyDown={handleKeyDown} fullWidth size="small" helperText="Leave blank for Default" inputProps={{"aria-label": "Task tag", maxLength: 24}} />
-                        <TextField label="Deadline" type="date" value={form.deadline} onChange={(e) => setForm({...form, deadline: e.target.value})} fullWidth size="small" helperText="Optional" InputLabelProps={{shrink: true}} inputProps={{"aria-label": "Task deadline"}} />
-                    </Stack>
-
-                    <Stack spacing={1}>
-                        <Typography sx={SECTION_LABEL_SX}>Priority</Typography>
-                        <ToggleButtonGroup value={form.priority} exclusive onChange={(_, v) => v && setForm({...form, priority: v})} size="small" fullWidth aria-label="Task priority">
-                            {PRIORITY_OPTIONS.map((p) => (
-                                <ToggleButton key={p.value} value={p.value} sx={{flex: 1, fontWeight: 600, py: 0.85, "&.Mui-selected": {bgcolor: `${p.color}14`, color: p.color, borderColor: `${p.color} !important`, "&:hover": {bgcolor: `${p.color}1F`}}}}>
-                                    {p.label}
-                                </ToggleButton>
-                            ))}
-                        </ToggleButtonGroup>
-                    </Stack>
-
-                    {/* Subtasks */}
-                    <Stack spacing={1}>
-                        <Typography sx={SECTION_LABEL_SX}>Subtasks {subtasks.length > 0 && `· ${subtasks.length}`}</Typography>
-                        {subtasks.length > 0 && (
-                            <Stack spacing={0.25}>
-                                {subtasks.map((s) => (
-                                    <Stack key={s.id} direction="row" alignItems="center" spacing={0.75} sx={{pl: 0.5, minHeight: 32}}>
-                                        <Box sx={{width: 6, height: 6, borderRadius: "50%", bgcolor: "#C5CCD7", flexShrink: 0}} />
-                                        <Typography sx={{flex: 1, fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{s.title}</Typography>
-                                        <Tooltip title="Remove">
-                                            <IconButton size="small" onClick={() => setSubtasks((prev) => prev.filter((x) => x.id !== s.id))} aria-label={`Remove subtask "${s.title}"`} sx={{color: "text.secondary", "&:hover": {bgcolor: "#FCE8E6", color: "error.main"}}}>
-                                                <DeleteOutlineIcon sx={{fontSize: 16}} />
-                                            </IconButton>
-                                        </Tooltip>
-                                    </Stack>
-                                ))}
+        <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" disableScrollLock transitionDuration={TRANSITION_DURATION} slotProps={{backdrop: {sx: {backgroundColor: "rgba(15, 24, 40, 0.18)", backdropFilter: "none", WebkitBackdropFilter: "none"}}, paper: {sx: PAPER_SX}, root: {sx: {"& .MuiDialog-container": {py: 2}}}}}>
+            <DialogTitle sx={TITLE_SX}>{isEdit ? "Edit Task" : "New Task"}</DialogTitle>
+            <Box sx={SCROLL_SHELL_SX}>
+                <Box aria-hidden sx={{...TOP_EDGE_SX, opacity: edges.top ? 1 : 0}}/>
+                <DialogContent ref={contentRef} onScroll={handleScroll} sx={CONTENT_SX}>
+                    <Stack spacing={2.5} sx={{mt: 0.5}}>
+                        <TextField label="Title" value={form.title} onChange={handleTitleChange} onKeyDown={handleKeyDown} inputRef={titleInputRef} fullWidth size="small" slotProps={TITLE_INPUT_PROPS}/>
+                        <Stack direction={{xs: "column", sm: "row"}} spacing={2} sx={FIELD_ROW_SX}>
+                            <TextField label="Tag" value={form.tag} onChange={handleTagChange} onKeyDown={handleKeyDown} fullWidth size="small" helperText="Leave blank for Default" slotProps={TAG_INPUT_PROPS}/>
+                            {pickerReady ? <DeadlineField value={form.deadline} onChange={handleDeadlineChange}/> : <TextField label="Deadline" value={form.deadline.replace("T", " ")} disabled fullWidth size="small" helperText="Defaults to one hour from now"/>}
+                        </Stack>
+                        <PriorityPicker value={form.priority} onChange={handlePriorityChange}/>
+                        <SubtaskDraftEditor subtasks={subtasks} onAdd={addSubtask} onRemove={removeSubtask}/>
+                        {!isEdit && onAddSchedule && (
+                            <Stack spacing={1.5} sx={{pt: 0.5, contain: "layout style"}}>
+                                <FormControlLabel control={<Switch checked={saveAsTemplate} onChange={handleTemplateChange} size="small"/>} label={<Typography sx={SWITCH_LABEL_SX}>Also save as recurring template</Typography>} sx={{ml: 0}}/>
+                                <ScheduleOptions show={saveAsTemplate} ready={scheduleReady} schedule={schedule} onFrequencyChange={handleFrequencyChange} onWeekDaysChange={handleWeekDaysChange} onMonthDaysChange={handleMonthDaysChange}/>
                             </Stack>
                         )}
-                        <Stack direction="row" spacing={1} alignItems="center">
-                            <TextField value={subtaskDraft} onChange={(e) => setSubtaskDraft(e.target.value)} onKeyDown={handleKeyDown} placeholder="Add a subtask" size="small" fullWidth inputProps={{"aria-label": "New subtask title", maxLength: 80}} sx={{"& .MuiOutlinedInput-root": {fontSize: "0.85rem"}}} />
-                            <Button onClick={handleAddSubtask} disabled={!subtaskDraft.trim()} size="small" startIcon={<AddIcon sx={{fontSize: 16}} />} disableElevation sx={{flexShrink: 0, fontSize: "0.8rem", px: 1.5}}>
-                                Add
-                            </Button>
-                        </Stack>
                     </Stack>
-
-                    {/* Save as recurring */}
-                    {!isEdit && onAddSchedule && (
-                        <Stack spacing={1.5} sx={{pt: 0.5}}>
-                            <FormControlLabel control={<Switch checked={saveAsTemplate} onChange={(e) => setSaveAsTemplate(e.target.checked)} size="small" />} label={<Typography sx={{fontWeight: 600, fontSize: "0.875rem", letterSpacing: "-0.005em"}}>Also save as recurring template</Typography>} sx={{ml: 0}} />
-                            <Collapse in={saveAsTemplate} timeout={220}>
-                                <Stack spacing={2} sx={{pt: 0.5, pl: 0.5}}>
-                                    <Stack spacing={1}>
-                                        <Typography sx={SECTION_LABEL_SX}>Frequency</Typography>
-                                        <ToggleButtonGroup value={schedule.frequency} exclusive onChange={(_, v) => v && setSchedule((s) => ({...s, frequency: v}))} size="small" fullWidth aria-label="Recurring frequency">
-                                            {["daily", "weekly", "monthly"].map((f) => (
-                                                <ToggleButton key={f} value={f} sx={{flex: 1, textTransform: "capitalize", fontWeight: 600, py: 0.85, "&.Mui-selected": {bgcolor: "rgba(31,111,235,0.10)", color: "primary.dark", borderColor: "primary.main !important", "&:hover": {bgcolor: "rgba(31,111,235,0.16)"}}}}>
-                                                    {f}
-                                                </ToggleButton>
-                                            ))}
-                                        </ToggleButtonGroup>
-                                    </Stack>
-
-                                    {schedule.frequency === "weekly" && (
-                                        <Stack spacing={1}>
-                                            <Typography sx={SECTION_LABEL_SX}>Repeat on</Typography>
-                                            <Stack direction="row" spacing={0.5} sx={{flexWrap: "wrap", gap: 0.5}}>
-                                                {WEEK_LABELS.map((label, i) => (
-                                                    <Chip key={i} label={label} size="small" onClick={() => toggleWeekDay(i)} aria-pressed={schedule.weekDays.includes(i)} sx={{cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: '"JetBrains Mono", monospace', bgcolor: schedule.weekDays.includes(i) ? "primary.main" : "transparent", color: schedule.weekDays.includes(i) ? "#fff" : "text.secondary", border: "1px solid", borderColor: schedule.weekDays.includes(i) ? "primary.main" : "#DDE2EA", "&:hover": {bgcolor: schedule.weekDays.includes(i) ? "primary.dark" : "rgba(31,111,235,0.06)"}}} />
-                                                ))}
-                                            </Stack>
-                                        </Stack>
-                                    )}
-
-                                    {schedule.frequency === "monthly" && (
-                                        <Stack spacing={1}>
-                                            <Typography sx={SECTION_LABEL_SX}>Repeat on days</Typography>
-                                            <Box sx={{display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 0.5}}>
-                                                {Array.from({length: 31}, (_, i) => i + 1).map((d) => (
-                                                    <Chip key={d} label={d} size="small" onClick={() => toggleMonthDay(d)} aria-pressed={schedule.monthDays.includes(d)} sx={{cursor: "pointer", fontWeight: 700, fontSize: 11, fontFamily: '"JetBrains Mono", monospace', height: 28, bgcolor: schedule.monthDays.includes(d) ? "primary.main" : "transparent", color: schedule.monthDays.includes(d) ? "#fff" : "text.secondary", border: "1px solid", borderColor: schedule.monthDays.includes(d) ? "primary.main" : "#DDE2EA", "& .MuiChip-label": {px: 0.5}, "&:hover": {bgcolor: schedule.monthDays.includes(d) ? "primary.dark" : "rgba(31,111,235,0.06)"}}} />
-                                                ))}
-                                            </Box>
-                                            <Typography sx={{color: "text.secondary", fontSize: 11, lineHeight: 1.4}}>If a selected day doesn't exist in a given month, the task triggers on the last day of that month.</Typography>
-                                        </Stack>
-                                    )}
-                                </Stack>
-                            </Collapse>
-                        </Stack>
-                    )}
-                </Stack>
-            </DialogContent>
-            <DialogActions sx={{px: 3, pb: 2.5}}>
-                <Button onClick={onClose} sx={{color: "text.secondary"}}>
-                    Cancel
-                </Button>
-                <Button variant="contained" onClick={handleSubmit} disabled={!form.title.trim()} disableElevation>
+                </DialogContent>
+                <Box aria-hidden sx={{...BOTTOM_EDGE_SX, opacity: edges.bottom ? 1 : 0}}/>
+            </Box>
+            <DialogActions sx={ACTIONS_SX}>
+                <Button onClick={onClose} sx={{color: "text.secondary"}}>Cancel</Button>
+                <Button variant="contained" onClick={handleSubmit} disabled={submitting || !form.title.trim()} disableElevation>
                     {isEdit ? "Save" : saveAsTemplate ? "Create & Schedule" : "Create"}
                 </Button>
             </DialogActions>

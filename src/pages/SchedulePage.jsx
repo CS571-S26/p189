@@ -1,71 +1,104 @@
 
-import {useState} from "react";
-import {Box, Card, CardContent, Typography, Stack, TextField, Button, ToggleButtonGroup, ToggleButton, Chip, IconButton, Tooltip, Switch, Select, MenuItem, FormControl, InputLabel, Grow, Divider} from "@mui/material";
+import {useState, useRef, useEffect, useCallback, useMemo, startTransition} from "react";
+import {Box, Card, CardContent, Typography, Stack, TextField, Button, ToggleButtonGroup, ToggleButton, IconButton, Tooltip, Switch, Select, MenuItem, FormControl, InputLabel, Divider} from "@mui/material";
 import EventRepeatOutlinedIcon from "@mui/icons-material/EventRepeatOutlined";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import CheckIcon from "@mui/icons-material/Check";
 import AddIcon from "@mui/icons-material/Add";
 import ChecklistIcon from "@mui/icons-material/Checklist";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import {TimePicker} from "@mui/x-date-pickers/TimePicker";
+import {renderTimeViewClock} from "@mui/x-date-pickers/timeViewRenderers";
+
 import PriorityBadge from "../components/PriorityBadge";
+import FrequencySelector from "../components/FrequencySelector";
+import SubtaskDraftEditor from "../components/SubtaskDraftEditor";
 
-const WEEK_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-const PRIORITY_OPTIONS = [
-    {value: "high", label: "High", color: "#D93025"},
-    {value: "medium", label: "Medium", color: "#E8710A"},
-    {value: "low", label: "Low", color: "#1E8E3E"}
-];
+import {PRIORITY_OPTIONS, LABEL_SX, MONO_SX, WEEK_LABELS, defaultTriggerTime, timeToDate, dateToTime, PICKER_SLOT_PROPS, PRIMARY_HOVER, ERROR_HOVER, SEALER_SHADOW, SURFACE_SPECULAR, CARD_SHADOW, CARD_SHADOW_HOVER, MOTION_FAST, uid, tactileTransition, priorityToggleSx, parseClockTime, normalizeOverdueAction, glassSurfaceSx, GLASS_TONES, staggerDelay} from "../javascripts/shared";
 
 const OVERDUE_OPTIONS = [
-    {value: "none", label: "Keep as-is"},
-    {value: "archive", label: "Archive to History"},
+    {value: "none", label: "Keep as-is"}, 
+    {value: "archive", label: "Archive to History"}, 
     {value: "delete", label: "Delete permanently"}
 ];
 
-const EMPTY_FORM = {title: "", tag: "Default", priority: "medium", frequency: "weekly", weekDays: [1, 3, 5], monthDays: [1]};
+const ACTION_ICON_SX = {width: 34, height: 34, color: "text.secondary", "&:hover": {bgcolor: PRIMARY_HOVER, color: "primary.main"}, "&:active": {bgcolor: "rgba(31, 111, 235, 0.12)"}};
 
-const SECTION_LABEL_SX = {fontFamily: '"JetBrains Mono", monospace', color: "text.secondary", fontWeight: 500, letterSpacing: "0.10em", fontSize: 10, textTransform: "uppercase"};
+const DELETE_ICON_SX = {...ACTION_ICON_SX, "&:hover": {bgcolor: ERROR_HOVER, color: "error.main"}, "&:active": {bgcolor: "rgba(217, 48, 37, 0.12)"}};
+
+const PILL_SX = {height: 20, px: 0.85, fontSize: 10.5, display: "inline-flex", alignItems: "center", ...glassSurfaceSx({radius: 999, backgroundColor: GLASS_TONES.neutral.backgroundColor, borderColor: GLASS_TONES.neutral.borderColor, boxShadow: GLASS_TONES.neutral.boxShadow})};
+
+const OVERDUE_MENU_PROPS = {disableScrollLock: true, transitionDuration: {enter: MOTION_FAST, exit: MOTION_FAST}, slotProps: {paper: {sx: {mt: 0.75}}, backdrop: {sx: {backgroundColor: "transparent"}}}, MenuListProps: {sx: {p: 1}}};
+
+const createEmptyForm = () => ({title: "", tag: "Default", priority: "medium", frequency: "weekly", weekDays: [1, 3, 5], monthDays: [1], triggerTime: defaultTriggerTime()});
 
 function formatFrequency(t) {
+
     if (t.frequency === "daily") return "Daily";
 
     if (t.frequency === "weekly") return (t.weekDays || []).map((d) => WEEK_LABELS[d]).join(", ") || "Weekly";
 
     if (t.frequency === "monthly") {
+
         const days = t.monthDays || [];
 
-        if (days.length <= 3) return `Monthly on ${days.join(", ")}`;
+        return days.length <= 3 ? `Monthly on ${days.join(", ")}` : `Monthly on ${days.length} days`;
 
-        return `Monthly on ${days.length} days`;
     }
-
     return "Custom";
 }
 
 function nextTriggerLabel(template) {
+
     if (!template.isActive) return "Paused";
 
     const now = new Date();
 
     const today = now.getDay();
 
+    const {hour, minute} = parseClockTime(template.triggerTime);
+
+    const fmt = (d, opts) => d.toLocaleDateString(undefined, opts);
+
+    const withTime = (d) => `${fmt(d, {weekday: "short", month: "short", day: "numeric"})} · ${template.triggerTime || "--:--"}`;
+
+    const isFutureTimeToday = () => {
+
+        const next = new Date(now);
+
+        next.setHours(hour, minute, 0, 0);
+
+        return next.getTime() > now.getTime();
+
+    };
+
     if (template.frequency === "daily") {
-        const tomorrow = new Date(now);
 
-        tomorrow.setDate(tomorrow.getDate() + 1);
+        const next = new Date(now);
 
-        return `Next: ${tomorrow.toLocaleDateString(undefined, {month: "short", day: "numeric"})}`;
+        if (!isFutureTimeToday()) next.setDate(next.getDate() + 1);
+
+        return `Next: ${withTime(next)}`;
+
     }
 
     if (template.frequency === "weekly") {
+
         const days = (template.weekDays || []).slice().sort((a, b) => a - b);
 
+        if (days.length === 0) return "";
+
         for (const d of days) {
-            if (d > today) {
+
+            if (d > today || (d === today && isFutureTimeToday())) {
+
                 const next = new Date(now);
 
                 next.setDate(next.getDate() + (d - today));
 
-                return `Next: ${next.toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"})}`;
+                return `Next: ${withTime(next)}`;
+
             }
         }
 
@@ -73,21 +106,30 @@ function nextTriggerLabel(template) {
 
         next.setDate(next.getDate() + (7 - today + days[0]));
 
-        return `Next: ${next.toLocaleDateString(undefined, {weekday: "short", month: "short", day: "numeric"})}`;
+        return `Next: ${withTime(next)}`;
+
     }
 
     if (template.frequency === "monthly") {
+
         const todayDate = now.getDate();
 
         const days = (template.monthDays || []).slice().sort((a, b) => a - b);
 
+        if (days.length === 0) return "";
+
+        const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
         for (const d of days) {
-            if (d > todayDate) {
-                const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
-                const next = new Date(now.getFullYear(), now.getMonth(), Math.min(d, last));
+            const clamped = Math.min(d, last);
 
-                return `Next: ${next.toLocaleDateString(undefined, {month: "short", day: "numeric"})}`;
+            if (clamped > todayDate || (clamped === todayDate && isFutureTimeToday())) {
+
+                const next = new Date(now.getFullYear(), now.getMonth(), clamped);
+
+                return `Next: ${withTime(next)}`;
+
             }
         }
 
@@ -97,88 +139,130 @@ function nextTriggerLabel(template) {
 
         const next = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(days[0], lastDay));
 
-        return `Next: ${next.toLocaleDateString(undefined, {month: "short", day: "numeric"})}`;
-    }
+        return `Next: ${withTime(next)}`;
 
+    }
     return "";
 }
 
-export default function SchedulePage({templates, overdueAction, onAdd, onToggle, onDelete, onSetOverdueAction}) {
-    const [form, setForm] = useState(EMPTY_FORM);
+export default function SchedulePage({templates = [], overdueAction, onAdd, onUpdate, onToggle, onDelete, onSetOverdueAction}) {
+
+    const [form, setForm] = useState(createEmptyForm);
 
     const [subtasks, setSubtasks] = useState([]);
 
-    const [subtaskDraft, setSubtaskDraft] = useState("");
+    const [editingId, setEditingId] = useState(null);
 
-    const handleAdd = () => {
-        const title = form.title.trim();
+    const [submitting, setSubmitting] = useState(false);
 
-        if (!title) return;
+    const formRef = useRef(null);
 
-        onAdd({...form, title, tag: form.tag.trim() || "Default", subtasks});
+    const submittingRef = useRef(false);
 
-        setForm(EMPTY_FORM);
+    const isEditing = editingId !== null;
+
+    const safeTemplates = useMemo(() => (Array.isArray(templates) ? templates : []), [templates]);
+
+    const overdueValue = normalizeOverdueAction(overdueAction);
+
+    useEffect(() => {
+
+        setSubmitting(false);
+
+        submittingRef.current = false;
+
+    }, [editingId]);
+
+    const resetForm = () => {
+
+        setForm(createEmptyForm());
 
         setSubtasks([]);
 
-        setSubtaskDraft("");
+        setEditingId(null);
+
+    };
+
+    const handleSubmit = () => {
+
+        const title = form.title.trim();
+
+        if (!title || submittingRef.current) return;
+
+        submittingRef.current = true;
+
+        setSubmitting(true);
+
+        const time = form.triggerTime || defaultTriggerTime();
+
+        const payload = {...form, title, tag: form.tag.trim() || "Default", triggerTime: time, subtasks};
+
+        if (isEditing && onUpdate) onUpdate(editingId, payload);
+
+        else onAdd(payload);
+
+        resetForm();
+
+        submittingRef.current = false;
+
+        setSubmitting(false);
+
+    };
+
+    const handleStartEdit = (template) => {
+
+        startTransition(() => {
+
+            setForm({title: template.title, tag: template.tag, priority: template.priority, frequency: template.frequency, weekDays: template.weekDays || [1, 3, 5], monthDays: template.monthDays || [1], triggerTime: template.triggerTime || defaultTriggerTime()});
+
+            setSubtasks((template.subtasks || []).map((s, i) => ({id: `edit-${template.id}-${i}`, title: s.title, weight: s.weight || 1, done: false})));
+
+            setEditingId(template.id);
+
+        });
+
+        requestAnimationFrame(() => formRef.current?.scrollIntoView({behavior: "smooth", block: "start"}));
+
     };
 
     const handleKeyDown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
 
-            if (e.target.getAttribute("aria-label") === "New subtask title") {
-                handleAddSubtask();
-            } else {
-                handleAdd();
-            }
-        }
+        if (e.isComposing || e.nativeEvent?.isComposing || e.key !== "Enter" || e.shiftKey) return;
+
+        e.preventDefault();
+
+        handleSubmit();
+
     };
 
-    const handleAddSubtask = () => {
-        const t = subtaskDraft.trim();
+    const addSubtask = useCallback((title) => {
+        setSubtasks((prev) => [...prev, {id: uid(), title, done: false, weight: 1}]);
+    }, []);
 
-        if (!t) return;
+    const removeSubtask = useCallback((id) => {
+        setSubtasks((prev) => prev.filter((s) => s.id !== id));
+    }, []);
 
-        setSubtasks((prev) => [...prev, {id: `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title: t, done: false, weight: 1}]);
+    const handleDeleteTemplate = (id) => {
 
-        setSubtaskDraft("");
-    };
+        if (editingId === id) resetForm();
 
-    const toggleWeekDay = (day) => {
-        setForm((f) => {
-            const has = f.weekDays.includes(day);
+        onDelete(id);
 
-            const next = has ? f.weekDays.filter((d) => d !== day) : [...f.weekDays, day].sort((a, b) => a - b);
-
-            return {...f, weekDays: next.length > 0 ? next : [day]};
-        });
-    };
-
-    const toggleMonthDay = (day) => {
-        setForm((f) => {
-            const has = f.monthDays.includes(day);
-
-            const next = has ? f.monthDays.filter((d) => d !== day) : [...f.monthDays, day].sort((a, b) => a - b);
-
-            return {...f, monthDays: next.length > 0 ? next : [day]};
-        });
     };
 
     return (
-        <Box component="main" sx={{flex: 1, px: {xs: 2, sm: 4}, pt: {xs: 2, sm: 3}, pb: 12, maxWidth: 980, width: "100%", mx: "auto"}}>
+        <Box component="main" className="flex-1 w-full mx-auto" sx={{px: {xs: 2, sm: 4}, pt: {xs: 2, sm: 3}, pb: 12, maxWidth: 980}}>
             <Stack spacing={3}>
-                {/* Overdue settings */}
-                <Card>
+                <Card sx={{bgcolor: "#FFFFFF", boxShadow: CARD_SHADOW}}>
                     <CardContent sx={{p: {xs: 2.5, sm: 3.25}}}>
-                        <Typography sx={{...SECTION_LABEL_SX, mb: 0.6}}>Overdue Behavior</Typography>
+                        <Typography sx={{...LABEL_SX, mb: 0.6}}>Overdue Behavior</Typography>
                         <Typography sx={{color: "text.secondary", mb: 2.25, lineHeight: 1.55, fontSize: "0.88rem"}}>Choose what happens when a task's deadline has passed without completion.</Typography>
                         <FormControl size="small" fullWidth sx={{maxWidth: 360}}>
                             <InputLabel id="overdue-action-label">When a task is overdue</InputLabel>
-                            <Select labelId="overdue-action-label" value={overdueAction} label="When a task is overdue" onChange={(e) => onSetOverdueAction(e.target.value)}>
+                            <Select labelId="overdue-action-label" value={overdueValue} label="When a task is overdue" onChange={(e) => onSetOverdueAction(e.target.value)} MenuProps={OVERDUE_MENU_PROPS}>
                                 {OVERDUE_OPTIONS.map((o) => (
-                                    <MenuItem key={o.value} value={o.value}>
+                                    <MenuItem key={o.value} value={o.value} sx={{borderRadius: "10px", fontSize: "0.875rem", fontWeight: 600, py: 1.25, mb: 0.75, "&:last-child": {mb: 0}, "&.Mui-selected": {bgcolor: "primary.main", color: "#FFFFFF", "&:hover": {bgcolor: "primary.dark"}}, "&:hover": {bgcolor: "rgba(15, 24, 40, 0.06)"}}}>
                                         {o.label}
                                     </MenuItem>
                                 ))}
@@ -186,147 +270,120 @@ export default function SchedulePage({templates, overdueAction, onAdd, onToggle,
                         </FormControl>
                     </CardContent>
                 </Card>
-
-                {/* New template */}
-                <Card>
+                <Card ref={formRef} sx={{bgcolor: "#FFFFFF", transition: tactileTransition("border-color, box-shadow"), ...(isEditing && {borderColor: "primary.main", boxShadow: `${SEALER_SHADOW}, 0 0 0 3px rgba(31, 111, 235, 0.10), 0 0 16px -6px rgba(31, 111, 235, 0.10), ${SURFACE_SPECULAR}`})}}>
                     <CardContent sx={{p: {xs: 2.5, sm: 3.25}}}>
-                        <Typography sx={{...SECTION_LABEL_SX, mb: 2.25}}>New Recurring Template</Typography>
+                        <div className="flex items-center justify-between mb-5">
+                            <Typography sx={LABEL_SX}>{isEditing ? "Edit Recurring Template" : "New Recurring Template"}</Typography>
+                            {isEditing && <Typography sx={{...MONO_SX, fontSize: 10, fontWeight: 600, letterSpacing: "0.10em", textTransform: "uppercase", color: "primary.main"}}>Editing</Typography>}
+                        </div>
                         <Stack spacing={2}>
-                            <TextField label="Task title" value={form.title} onChange={(e) => setForm({...form, title: e.target.value})} onKeyDown={handleKeyDown} fullWidth size="small" inputProps={{"aria-label": "Recurring task title", maxLength: 120}} />
-                            <TextField label="Tag" value={form.tag} onChange={(e) => setForm({...form, tag: e.target.value})} onKeyDown={handleKeyDown} fullWidth size="small" helperText="Leave blank for Default" inputProps={{"aria-label": "Recurring task tag", maxLength: 24}} />
-
+                            <TextField label="Task title" value={form.title} onChange={(e) => setForm({...form, title: e.target.value})} onKeyDown={handleKeyDown} fullWidth size="small" slotProps={{htmlInput: {"aria-label": "Recurring task title", maxLength: 120}}}/>
+                            <Stack direction={{xs: "column", sm: "row"}} spacing={2}>
+                                <TextField label="Tag" value={form.tag} onChange={(e) => setForm({...form, tag: e.target.value})} onKeyDown={handleKeyDown} fullWidth size="small" helperText="Leave blank for Default" slotProps={{htmlInput: {"aria-label": "Recurring task tag", maxLength: 24}}}/>
+                                <TimePicker label="Trigger time" value={timeToDate(form.triggerTime)} onChange={(d) => setForm({...form, triggerTime: dateToTime(d)})} ampm={false} viewRenderers={{hours: renderTimeViewClock, minutes: renderTimeViewClock}} closeOnSelect={true} slotProps={{...PICKER_SLOT_PROPS, toolbar: {hidden: false}, layout: {sx: {"& .MuiTimeClock-root": {margin: "auto"}}}, textField: {size: "small", fullWidth: true, helperText: "Deadline for auto-created tasks"}}}/>
+                            </Stack>
                             <Stack spacing={1}>
-                                <Typography sx={SECTION_LABEL_SX}>Priority</Typography>
+                                <Typography sx={LABEL_SX}>Priority</Typography>
                                 <ToggleButtonGroup value={form.priority} exclusive onChange={(_, v) => v && setForm({...form, priority: v})} size="small" fullWidth aria-label="Recurring task priority">
                                     {PRIORITY_OPTIONS.map((p) => (
-                                        <ToggleButton key={p.value} value={p.value} sx={{flex: 1, fontWeight: 600, py: 0.85, "&.Mui-selected": {bgcolor: `${p.color}14`, color: p.color, borderColor: `${p.color} !important`, "&:hover": {bgcolor: `${p.color}1F`}}}}>
+                                        <ToggleButton key={p.value} value={p.value} sx={priorityToggleSx(p)}>
                                             {p.label}
                                         </ToggleButton>
                                     ))}
                                 </ToggleButtonGroup>
                             </Stack>
-
-                            <Stack spacing={1}>
-                                <Typography sx={SECTION_LABEL_SX}>Frequency</Typography>
-                                <ToggleButtonGroup value={form.frequency} exclusive onChange={(_, v) => v && setForm({...form, frequency: v})} size="small" fullWidth aria-label="Recurring frequency">
-                                    {["daily", "weekly", "monthly"].map((f) => (
-                                        <ToggleButton key={f} value={f} sx={{flex: 1, textTransform: "capitalize", fontWeight: 600, py: 0.85, "&.Mui-selected": {bgcolor: "rgba(31,111,235,0.10)", color: "primary.dark", borderColor: "primary.main !important", "&:hover": {bgcolor: "rgba(31,111,235,0.16)"}}}}>
-                                            {f}
-                                        </ToggleButton>
-                                    ))}
-                                </ToggleButtonGroup>
-                            </Stack>
-
-                            {form.frequency === "weekly" && (
-                                <Stack spacing={1}>
-                                    <Typography sx={SECTION_LABEL_SX}>Repeat on</Typography>
-                                    <Stack direction="row" spacing={0.5} sx={{flexWrap: "wrap", gap: 0.5}}>
-                                        {WEEK_LABELS.map((label, i) => (
-                                            <Chip key={i} label={label} size="small" onClick={() => toggleWeekDay(i)} aria-pressed={form.weekDays.includes(i)} sx={{cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: '"JetBrains Mono", monospace', bgcolor: form.weekDays.includes(i) ? "primary.main" : "transparent", color: form.weekDays.includes(i) ? "#fff" : "text.secondary", border: "1px solid", borderColor: form.weekDays.includes(i) ? "primary.main" : "#DDE2EA", "&:hover": {bgcolor: form.weekDays.includes(i) ? "primary.dark" : "rgba(31,111,235,0.06)"}}} />
-                                        ))}
-                                    </Stack>
-                                </Stack>
-                            )}
-
-                            {form.frequency === "monthly" && (
-                                <Stack spacing={1}>
-                                    <Typography sx={SECTION_LABEL_SX}>Repeat on days</Typography>
-                                    <Box sx={{display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 0.5}}>
-                                        {Array.from({length: 31}, (_, i) => i + 1).map((d) => (
-                                            <Chip key={d} label={d} size="small" onClick={() => toggleMonthDay(d)} aria-pressed={form.monthDays.includes(d)} sx={{cursor: "pointer", fontWeight: 700, fontSize: 11, fontFamily: '"JetBrains Mono", monospace', height: 28, bgcolor: form.monthDays.includes(d) ? "primary.main" : "transparent", color: form.monthDays.includes(d) ? "#fff" : "text.secondary", border: "1px solid", borderColor: form.monthDays.includes(d) ? "primary.main" : "#DDE2EA", "& .MuiChip-label": {px: 0.5}, "&:hover": {bgcolor: form.monthDays.includes(d) ? "primary.dark" : "rgba(31,111,235,0.06)"}}} />
-                                        ))}
-                                    </Box>
-                                    <Typography sx={{color: "text.secondary", fontSize: 11, lineHeight: 1.4}}>If a selected day doesn't exist in a given month, the task triggers on the last day of that month.</Typography>
-                                </Stack>
-                            )}
-
-                            <Stack spacing={1}>
-                                <Typography sx={SECTION_LABEL_SX}>Subtasks {subtasks.length > 0 && `· ${subtasks.length}`}</Typography>
-                                {subtasks.length > 0 && (
-                                    <Stack spacing={0.25}>
-                                        {subtasks.map((s) => (
-                                            <Stack key={s.id} direction="row" alignItems="center" spacing={0.75} sx={{pl: 0.5, minHeight: 32}}>
-                                                <Box sx={{width: 6, height: 6, borderRadius: "50%", bgcolor: "#C5CCD7", flexShrink: 0}} />
-                                                <Typography sx={{flex: 1, fontSize: "0.85rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{s.title}</Typography>
-                                                <Tooltip title="Remove">
-                                                    <IconButton size="small" onClick={() => setSubtasks((prev) => prev.filter((x) => x.id !== s.id))} aria-label={`Remove subtask "${s.title}"`} sx={{color: "text.secondary", "&:hover": {bgcolor: "#FCE8E6", color: "error.main"}}}>
-                                                        <DeleteOutlineIcon sx={{fontSize: 16}} />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Stack>
-                                        ))}
-                                    </Stack>
-                                )}
-                                <Stack direction="row" spacing={1} alignItems="center">
-                                    <TextField value={subtaskDraft} onChange={(e) => setSubtaskDraft(e.target.value)} onKeyDown={handleKeyDown} placeholder="Add a subtask" size="small" fullWidth inputProps={{"aria-label": "New subtask title", maxLength: 80}} sx={{"& .MuiOutlinedInput-root": {fontSize: "0.85rem"}}} />
-                                    <Button onClick={handleAddSubtask} disabled={!subtaskDraft.trim()} size="small" startIcon={<AddIcon sx={{fontSize: 16}} />} disableElevation sx={{flexShrink: 0, fontSize: "0.8rem", px: 1.5}}>
-                                        Add
-                                    </Button>
-                                </Stack>
-                            </Stack>
-
-                            <Box>
-                                <Button variant="contained" onClick={handleAdd} disabled={!form.title.trim()} startIcon={<AddIcon />} disableElevation>
-                                    Add Template
+                            <FrequencySelector frequency={form.frequency} weekDays={form.weekDays} monthDays={form.monthDays} onFrequencyChange={(frequency) => setForm((f) => ({...f, frequency}))} onWeekDaysChange={(weekDays) => setForm((f) => ({...f, weekDays}))} onMonthDaysChange={(monthDays) => setForm((f) => ({...f, monthDays}))}/>
+                            <SubtaskDraftEditor subtasks={subtasks} onAdd={addSubtask} onRemove={removeSubtask}/>
+                            <div className="flex items-center gap-2">
+                                <Button variant="contained" onClick={handleSubmit} disabled={submitting || !form.title.trim()} startIcon={isEditing ? <CheckIcon/> : <AddIcon/>} disableElevation>
+                                    {isEditing ? "Save Changes" : "Add Template"}
                                 </Button>
-                            </Box>
+                                {isEditing && (
+                                    <Button onClick={resetForm} sx={{color: "text.secondary"}}>
+                                        Cancel
+                                    </Button>
+                                )}
+                            </div>
                         </Stack>
                     </CardContent>
                 </Card>
-
-                {/* Templates list */}
                 <Box>
-                    <Stack direction="row" alignItems="center" spacing={1} sx={{mb: 2}}>
-                        <EventRepeatOutlinedIcon sx={{fontSize: 14, color: "text.secondary"}} />
-                        <Typography sx={{...SECTION_LABEL_SX, letterSpacing: "0.14em", fontSize: 10.5}}>Active Templates · {templates.length}</Typography>
-                    </Stack>
-                    {templates.length === 0 ? (
-                        <Stack alignItems="center" justifyContent="center" sx={{py: 7, color: "text.secondary"}}>
-                            <Box sx={{width: 80, height: 80, borderRadius: "50%", bgcolor: "rgba(124,92,250,0.10)", display: "flex", alignItems: "center", justifyContent: "center", mb: 2}}>
-                                <EventRepeatOutlinedIcon sx={{fontSize: 38, color: "secondary.main"}} />
+                    <div className="flex items-center gap-2 mb-3.5">
+                        <EventRepeatOutlinedIcon sx={{fontSize: 14, color: "text.secondary"}}/>
+                        <Typography sx={{...MONO_SX, color: "text.secondary", fontWeight: 600, letterSpacing: "0.14em", fontSize: 10.5, textTransform: "uppercase"}}>Active Templates · {safeTemplates.length}</Typography>
+                    </div>
+                    {safeTemplates.length === 0 ? (
+                        <Stack sx={{alignItems: "center", justifyContent: "center", py: 7, color: "text.secondary"}}>
+                            <Box className="flex items-center justify-center" sx={{width: 80, height: 80, borderRadius: "50%", bgcolor: "rgba(124, 92, 250, 0.10)", mb: 2}}>
+                                <EventRepeatOutlinedIcon sx={{fontSize: 38, color: "secondary.main"}}/>
                             </Box>
                             <Typography sx={{fontWeight: 600, fontSize: "1rem", color: "text.primary", mb: 0.4}}>No recurring templates yet</Typography>
                             <Typography sx={{fontSize: "0.85rem"}}>Add one above to auto-spawn tasks on a schedule.</Typography>
                         </Stack>
                     ) : (
                         <Stack spacing={1.5}>
-                            {templates.map((t, i) => {
+                            {safeTemplates.map((t, i) => {
+
                                 const freqLabel = formatFrequency(t);
 
                                 const tplSubtasks = t.subtasks || [];
 
+                                const isCurrentlyEditing = editingId === t.id;
+
                                 return (
-                                    <Grow in key={t.id} timeout={220 + i * 50}>
-                                        <Card sx={{borderRadius: "14px", opacity: t.isActive ? 1 : 0.6, transition: "opacity 0.22s, border-color 0.22s", position: "relative", overflow: "hidden", "&:hover": {borderColor: "rgba(31,111,235,0.32)"}}}>
-                                            <PriorityBadge priority={t.priority} variant="bar" inset={12} />
+                                    <div key={t.id} className="animate-fade-in-up" style={{animationDelay: staggerDelay(i)}}>
+                                        <Card sx={{bgcolor: "#FFFFFF", opacity: t.isActive ? 1 : 0.6, position: "relative", overflow: "hidden", transition: tactileTransition("transform, border-color, box-shadow, opacity"), backfaceVisibility: "hidden", backgroundClip: "padding-box", boxShadow: CARD_SHADOW, "&:hover": {transform: "translateY(-1px)", borderColor: "rgba(31, 111, 235, 0.24)", boxShadow: CARD_SHADOW_HOVER}, "&:active": {transform: "scale(0.99)"}, ...(isCurrentlyEditing && {borderColor: "primary.main", boxShadow: `${SEALER_SHADOW}, 0 0 0 3px rgba(31, 111, 235, 0.10), 0 0 16px -6px rgba(31, 111, 235, 0.10), ${SURFACE_SPECULAR}`})}}>
+                                            <PriorityBadge priority={t.priority} variant="bar" inset={12}/>
                                             <CardContent sx={{p: 2.25, pl: 2.75, "&:last-child": {pb: 2.25}}}>
-                                                <Stack direction={{xs: "column", sm: "row"}} spacing={1.5} alignItems={{xs: "stretch", sm: "center"}}>
-                                                    <Stack direction="row" alignItems="center" spacing={1.25} sx={{flex: 1, minWidth: 0}}>
-                                                        <Box sx={{flex: 1, minWidth: 0}}>
-                                                            <Typography sx={{fontWeight: 600, fontSize: "0.97rem", letterSpacing: "-0.012em", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"}}>{t.title}</Typography>
-                                                            <Stack direction="row" spacing={0.75} alignItems="center" sx={{mt: 0.6, flexWrap: "wrap", rowGap: 0.5}}>
-                                                                <Chip label={t.tag} size="small" variant="outlined" sx={{height: 20, fontSize: 10.5, fontWeight: 500, borderColor: "divider", color: "text.secondary", bgcolor: "rgba(15,24,40,0.025)", "& .MuiChip-label": {px: 0.85}}} />
-                                                                <Chip label={freqLabel} size="small" sx={{height: 20, fontSize: 10.5, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', bgcolor: "rgba(31,111,235,0.10)", color: "primary.dark", border: "none", "& .MuiChip-label": {px: 0.85}}} />
-                                                                {tplSubtasks.length > 0 && <Chip icon={<ChecklistIcon sx={{fontSize: 12}} />} label={`${tplSubtasks.length} subtask${tplSubtasks.length > 1 ? "s" : ""}`} size="small" sx={{height: 20, fontSize: 10.5, bgcolor: "rgba(15,24,40,0.05)", color: "text.secondary", border: "none", "& .MuiChip-icon": {color: "text.secondary", ml: 0.5, mr: -0.25}, "& .MuiChip-label": {px: 0.85}}} />}
-                                                                <Typography sx={{color: "text.secondary", fontSize: 10.5, fontFamily: '"JetBrains Mono", monospace', fontWeight: 500}}>{nextTriggerLabel(t)}</Typography>
-                                                            </Stack>
-                                                        </Box>
-                                                    </Stack>
-                                                    <Divider flexItem orientation="vertical" sx={{display: {xs: "none", sm: "block"}, borderColor: "divider"}} />
-                                                    <Stack direction="row" alignItems="center" spacing={0.5} sx={{flexShrink: 0, justifyContent: {xs: "flex-end", sm: "flex-start"}}}>
+                                                <Stack direction={{xs: "column", sm: "row"}} spacing={1.5} sx={{alignItems: {xs: "stretch", sm: "center"}}}>
+                                                    <Box className="flex-1 min-w-0">
+                                                        <Typography className="truncate" sx={{fontWeight: 600, fontSize: "0.97rem", letterSpacing: "-0.012em", lineHeight: 1.3}}>
+                                                            {t.title}
+                                                        </Typography>
+                                                        <div className="flex items-center flex-wrap gap-1.5 mt-1.5" style={{rowGap: 4}}>
+                                                            <Box component="span" sx={{...PILL_SX, fontWeight: 500, color: "text.secondary"}}>
+                                                                {t.tag}
+                                                            </Box>
+                                                            <Box component="span" sx={{...PILL_SX, ...MONO_SX, fontWeight: 700, backgroundColor: GLASS_TONES.primary.backgroundColor, borderColor: GLASS_TONES.primary.borderColor, boxShadow: GLASS_TONES.primary.boxShadow, color: GLASS_TONES.primary.color}}>
+                                                                {freqLabel}
+                                                            </Box>
+                                                            {t.triggerTime && (
+                                                                <Box component="span" sx={{...PILL_SX, ...MONO_SX, gap: 0.5, fontWeight: 600, backgroundColor: GLASS_TONES.primary.backgroundColor, borderColor: GLASS_TONES.primary.borderColor, boxShadow: GLASS_TONES.primary.boxShadow, color: GLASS_TONES.primary.color}}>
+                                                                    <AccessTimeIcon sx={{fontSize: 11}}/>
+                                                                    {t.triggerTime}
+                                                                </Box>
+                                                            )}
+                                                            {tplSubtasks.length > 0 && (
+                                                                <Box component="span" sx={{...PILL_SX, gap: 0.5, fontWeight: 500, color: "text.secondary"}}>
+                                                                    <ChecklistIcon sx={{fontSize: 12}}/>
+                                                                    {`${tplSubtasks.length} subtask${tplSubtasks.length !== 1 ? "s" : ""}`}
+                                                                </Box>
+                                                            )}
+                                                            <Typography sx={{...MONO_SX, color: "text.secondary", fontSize: 10.5, fontWeight: 500}}>{nextTriggerLabel(t)}</Typography>
+                                                        </div>
+                                                    </Box>
+                                                    <Divider flexItem orientation="vertical" sx={{display: {xs: "none", sm: "block"}, borderColor: "divider"}}/>
+                                                    <div className="flex items-center gap-0.5 shrink-0 sm:justify-start justify-end">
                                                         <Tooltip title={t.isActive ? "Pause" : "Resume"}>
-                                                            <Switch checked={t.isActive} onChange={() => onToggle(t.id)} size="small" inputProps={{"aria-label": `${t.isActive ? "Pause" : "Resume"} template "${t.title}"`}} />
+                                                            <div className="flex items-center h-[34px]">
+                                                                <Switch checked={t.isActive} onChange={() => onToggle(t.id)} size="small" slotProps={{input: {"aria-label": `${t.isActive ? "Pause" : "Resume"} template "${t.title}"`}}} sx={{transform: "scale(0.9)", transformOrigin: "center"}}/>
+                                                            </div>
                                                         </Tooltip>
-                                                        <Tooltip title="Delete template">
-                                                            <IconButton size="small" onClick={() => onDelete(t.id)} aria-label={`Delete template "${t.title}"`} sx={{color: "text.secondary", "&:hover": {bgcolor: "#FCE8E6", color: "error.main"}}}>
-                                                                <DeleteOutlineIcon sx={{fontSize: 18}} />
+                                                        <Tooltip title="Edit template">
+                                                            <IconButton size="small" onClick={() => handleStartEdit(t)} aria-label={`Edit template "${t.title}"`} sx={{...ACTION_ICON_SX, color: isCurrentlyEditing ? "primary.main" : "text.secondary"}}>
+                                                                <EditOutlinedIcon sx={{fontSize: 18}}/>
                                                             </IconButton>
                                                         </Tooltip>
-                                                    </Stack>
+                                                        <Tooltip title="Delete template">
+                                                            <IconButton size="small" onClick={() => handleDeleteTemplate(t.id)} aria-label={`Delete template "${t.title}"`} sx={DELETE_ICON_SX}>
+                                                                <DeleteOutlinedIcon sx={{fontSize: 18}}/>
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </div>
                                                 </Stack>
                                             </CardContent>
                                         </Card>
-                                    </Grow>
+                                    </div>
                                 );
                             })}
                         </Stack>

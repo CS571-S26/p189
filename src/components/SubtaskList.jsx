@@ -1,32 +1,41 @@
 
-import {useState} from "react";
+import {useState, useMemo} from "react";
 import {Box, Stack, Typography, IconButton, TextField, Button, LinearProgress, Tooltip} from "@mui/material";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import AddIcon from "@mui/icons-material/Add";
+
 import StatusToggle from "./StatusToggle";
 
-function computeProgress(subtasks) {
-    if (!subtasks || subtasks.length === 0) return 0;
+import {SUBTASK_ITEM_SX, SUBTASK_INPUT_SX, SUBTASK_ADD_BTN_SX, DELETE_ICON_SX, MONO_SX, subtaskStats} from "../javascripts/shared";
 
-    const total = subtasks.reduce((acc, s) => acc + (s.weight || 1), 0);
+const SHELL_SX = {px: 2.25, pt: 1.5, pb: 1.75, bgcolor: "rgba(31, 111, 235, 0.02)", borderTop: "1px solid", borderColor: "divider"};
 
-    if (total === 0) return 0;
+const HEADER_SX = {...MONO_SX, color: "text.secondary", fontWeight: 500, letterSpacing: "0.10em", fontSize: 10, mb: 0.85};
 
-    const done = subtasks.reduce((acc, s) => acc + (s.done ? s.weight || 1 : 0), 0);
+const TITLE_SX_BASE = {fontSize: "0.85rem", color: "text.primary", transition: "opacity 225ms cubic-bezier(0.2, 0, 0, 1)", ml: 0.75};
 
-    return Math.round((done / total) * 100);
-}
+const DELETE_BTN_SX = {...DELETE_ICON_SX, ml: 0.5};
+
+const INPUT_SX = {
+
+    "& .MuiOutlinedInput-root": {
+        ...SUBTASK_INPUT_SX["& .MuiOutlinedInput-root"], 
+        bgcolor: "background.paper"
+    }
+};
 
 export default function SubtaskList({taskId, subtasks = [], onAddSubtask, onToggleSubtask, onDeleteSubtask}) {
+
     const [draft, setDraft] = useState("");
 
-    const progress = computeProgress(subtasks);
-
-    const completedCount = subtasks.filter((s) => s.done).length;
+    const stats = useMemo(() => subtaskStats(subtasks), [subtasks]);
 
     const readOnly = !onAddSubtask;
 
+    const complete = stats.complete;
+
     const handleAdd = () => {
+
         const next = draft.trim();
 
         if (!next) return;
@@ -34,51 +43,45 @@ export default function SubtaskList({taskId, subtasks = [], onAddSubtask, onTogg
         onAddSubtask(taskId, next);
 
         setDraft("");
+
     };
-
-    const handleKeyDown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-
-            handleAdd();
-        }
-    };
-
-    const complete = progress === 100;
 
     return (
-        <Box sx={{px: 2.25, pt: 1.5, pb: 1.75, bgcolor: "rgba(31,111,235,0.025)", borderTop: "1px solid", borderColor: "divider"}}>
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{mb: 0.85}}>
-                <Typography sx={{fontFamily: '"JetBrains Mono", monospace', color: "text.secondary", fontWeight: 500, letterSpacing: "0.10em", fontSize: 10, textTransform: "uppercase"}}>
-                    Subtasks · {completedCount}/{subtasks.length}
-                </Typography>
-                <Typography sx={{fontFamily: '"JetBrains Mono", monospace', color: complete ? "success.main" : "primary.main", fontWeight: 600, fontSize: 11, letterSpacing: "0.02em"}}>{progress}%</Typography>
-            </Stack>
-            <LinearProgress variant="determinate" value={progress} aria-label="Subtask progress" sx={{height: 5, borderRadius: 3, bgcolor: "rgba(15,24,40,0.06)", mb: 1.25, "& .MuiLinearProgress-bar": {bgcolor: complete ? "success.main" : "primary.main", borderRadius: 3, transition: "transform 0.4s cubic-bezier(0.4,0,0.2,1)"}}} />
+        <Box sx={SHELL_SX}>
+            <Typography className="uppercase" sx={HEADER_SX}>
+                Subtasks · {stats.done}/{stats.total}
+            </Typography>
+            <LinearProgress variant="determinate" value={stats.progress} aria-label="Subtask progress" sx={{height: 5, borderRadius: 3, bgcolor: "rgba(15, 24, 40, 0.06)", mb: 1.25, "& .MuiLinearProgress-bar": {bgcolor: complete ? "success.main" : "primary.main", borderRadius: 3, transition: "transform 225ms cubic-bezier(0.2, 0, 0, 1)"}}}/>
             {subtasks.length > 0 && (
-                <Stack spacing={0.25} sx={{mb: readOnly ? 0 : 1}}>
+                <Stack spacing={0.75} sx={{mb: readOnly ? 0 : 1.25}}>
                     {subtasks.map((s) => (
-                        <Stack key={s.id} direction="row" alignItems="center" spacing={0.5} sx={{minHeight: 32}}>
-                            {onToggleSubtask ? <StatusToggle checked={s.done} onChange={() => onToggleSubtask(taskId, s.id)} label={s.title} size="small" /> : <Box sx={{width: 6, height: 6, borderRadius: "50%", bgcolor: s.done ? "primary.main" : "#C5CCD7", flexShrink: 0, ml: 1, mr: 0.75}} />}
-                            <Typography sx={{flex: 1, minWidth: 0, fontSize: "0.85rem", color: "text.primary", textDecoration: s.done ? "line-through" : "none", opacity: s.done ? 0.55 : 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "opacity 0.18s"}}>{s.title}</Typography>
+                        <Box key={s.id} sx={SUBTASK_ITEM_SX}>
+                            {onToggleSubtask ? (
+                                <StatusToggle checked={s.done} onChange={() => onToggleSubtask(taskId, s.id)} label={s.title} size="small"/>
+                            ) : (
+                                <span className="inline-flex items-center justify-center shrink-0 w-7 h-7">
+                                    <span className="w-1.5 h-1.5 rounded-full" style={{backgroundColor: s.done ? "#1F6FEB" : "#C5CCD7"}}/>
+                                </span>
+                            )}
+                            <Typography className="flex-1 min-w-0 truncate" sx={{...TITLE_SX_BASE, textDecoration: s.done ? "line-through" : "none", opacity: s.done ? 0.55 : 1}}>
+                                {s.title}
+                            </Typography>
                             {onDeleteSubtask && (
                                 <Tooltip title="Remove subtask">
-                                    <IconButton size="small" onClick={() => onDeleteSubtask(taskId, s.id)} aria-label={`Delete subtask "${s.title}"`} sx={{color: "text.secondary", "&:hover": {bgcolor: "#FCE8E6", color: "error.main"}}}>
-                                        <DeleteOutlineIcon sx={{fontSize: 16}} />
+                                    <IconButton size="small" onClick={() => onDeleteSubtask(taskId, s.id)} aria-label={`Delete subtask "${s.title}"`} sx={DELETE_BTN_SX}>
+                                        <DeleteOutlinedIcon sx={{fontSize: 16}}/>
                                     </IconButton>
                                 </Tooltip>
                             )}
-                        </Stack>
+                        </Box>
                     ))}
                 </Stack>
             )}
             {!readOnly && (
-                <Stack direction="row" spacing={1} alignItems="center">
-                    <TextField value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={handleKeyDown} placeholder="Add a subtask" size="small" fullWidth variant="outlined" inputProps={{"aria-label": "New subtask title", maxLength: 80}} sx={{"& .MuiOutlinedInput-root": {bgcolor: "background.paper", fontSize: "0.85rem"}}} />
-                    <Button onClick={handleAdd} disabled={!draft.trim()} size="small" startIcon={<AddIcon sx={{fontSize: 16}} />} disableElevation sx={{flexShrink: 0, fontSize: "0.8rem", px: 1.5}}>
-                        Add
-                    </Button>
-                </Stack>
+                <div className="flex items-center gap-2">
+                    <TextField value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (!e.isComposing && !e.nativeEvent?.isComposing && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAdd(); }}} placeholder="Add a subtask" size="small" fullWidth slotProps={{htmlInput: {"aria-label": "New subtask title", maxLength: 80}}} sx={INPUT_SX}/>
+                    <Button onClick={handleAdd} disabled={!draft.trim()} size="small" startIcon={<AddIcon sx={{fontSize: 16}}/>} disableElevation className="shrink-0" sx={SUBTASK_ADD_BTN_SX}>Add</Button>
+                </div>
             )}
         </Box>
     );

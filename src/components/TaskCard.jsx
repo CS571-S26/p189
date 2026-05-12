@@ -1,44 +1,93 @@
 
-import {forwardRef, useState, useRef, useMemo} from "react";
-import {Card, CardContent, Typography, Box, IconButton, Chip, Tooltip, Stack, TextField, Divider, Collapse} from "@mui/material";
+import {useState, useRef, useMemo, useEffect, useCallback, memo} from "react";
+import {Card, CardContent, Typography, Box, IconButton, Chip, Tooltip, TextField} from "@mui/material";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import EventIcon from "@mui/icons-material/Event";
 import ChecklistIcon from "@mui/icons-material/Checklist";
+
 import StatusToggle from "./StatusToggle";
 import SubtaskList from "./SubtaskList";
-import PriorityBadge, {PRIORITY} from "./PriorityBadge";
+import PriorityBadge from "./PriorityBadge";
 
-function todayStr() {
-    return new Date().toISOString().slice(0, 10);
+import {MONO_SX, PRIMARY_HOVER, ERROR_HOVER, SEALER_SHADOW, SURFACE_SPECULAR, SPECULAR_HIGHLIGHT, CARD_SHADOW, CARD_SHADOW_HOVER, MOTION_BASE, tactileTransition, formatTaskDeadline, subtaskStats, glassSurfaceSx, GLASS_TONES} from "../javascripts/shared";
+
+const ACTION_SX = {
+    width: 32, 
+    height: 32, 
+    color: "text.secondary", 
+    "&:hover": {bgcolor: PRIMARY_HOVER, color: "primary.main"}, 
+    "&:active": {bgcolor: "rgba(31, 111, 235, 0.12)"}
+};
+
+const DELETE_HOVER_SX = {
+    ...ACTION_SX, 
+    "&:hover": {bgcolor: ERROR_HOVER, color: "error.main"}, 
+    "&:active": {bgcolor: "rgba(217, 48, 37, 0.12)"}
+};
+
+const CARD_SX = {
+    position: "relative", 
+    display: "flex", 
+    flexDirection: "column", 
+    overflow: "hidden", 
+    isolation: "isolate", 
+    bgcolor: "#FFFFFF", 
+    backgroundClip: "padding-box", 
+    boxShadow: CARD_SHADOW, 
+    transition: tactileTransition("transform, box-shadow, border-color, opacity"), 
+    backfaceVisibility: "hidden", 
+    contain: "layout style", 
+    "&:hover": {transform: "translateY(-1px)", borderColor: "rgba(31, 111, 235, 0.24)", boxShadow: CARD_SHADOW_HOVER}
+};
+
+const PIN_BADGE_STYLE = {background: "linear-gradient(135deg, #1F6FEB 0%, #4F8AF7 100%)", boxShadow: `${SEALER_SHADOW}, 0 2px 6px rgba(31, 111, 235, 0.28), ${SPECULAR_HIGHLIGHT}`};
+
+const PILL_LABEL_SX = {...MONO_SX, fontSize: 10, fontWeight: 700, letterSpacing: "0.02em", lineHeight: 1, textTransform: "uppercase"};
+
+const TITLE_SX_BASE = {fontWeight: 600, fontSize: "0.96rem", lineHeight: 1.4, letterSpacing: "-0.012em", color: "text.primary", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "break-word"};
+
+const TAG_CHIP_SX = {
+    height: 22, 
+    fontSize: 11, 
+    fontWeight: 500, 
+    ...glassSurfaceSx({radius: 999, backgroundColor: GLASS_TONES.neutral.backgroundColor, borderColor: GLASS_TONES.neutral.borderColor, boxShadow: GLASS_TONES.neutral.boxShadow}), 
+    color: "text.secondary", 
+    maxWidth: "100%", 
+    "& .MuiChip-label": {px: 1, overflow: "hidden", textOverflow: "ellipsis"}
+};
+
+const FOOTER_SX = {borderTop: "1px solid", borderColor: "divider", boxShadow: SURFACE_SPECULAR};
+
+const EXPAND_ICON_BASE_SX = {fontSize: 20, transition: tactileTransition("transform", MOTION_BASE), backfaceVisibility: "hidden"};
+
+function deadlineTone(deadline, isOverdue) {
+
+    if (isOverdue) return GLASS_TONES.error;
+
+    if (deadline?.soon) return GLASS_TONES.primary;
+
+    return GLASS_TONES.neutral;
+
 }
 
-function formatDeadline(iso) {
-    if (!iso) return null;
+function DeadlinePill({deadline, isOverdue}) {
 
-    const today = todayStr();
+    const tone = deadlineTone(deadline, isOverdue);
 
-    if (iso === today) return {label: "Today", overdue: false, soon: true};
-
-    const t = new Date(today + "T00:00:00");
-
-    const d = new Date(iso + "T00:00:00");
-
-    const diffDays = Math.round((d - t) / 86400000);
-
-    if (diffDays === 1) return {label: "Tomorrow", overdue: false, soon: true};
-
-    if (diffDays === -1) return {label: "Yesterday", overdue: true, soon: false};
-
-    if (diffDays < 0) return {label: d.toLocaleDateString(undefined, {month: "short", day: "numeric"}), overdue: true, soon: false};
-
-    return {label: d.toLocaleDateString(undefined, {month: "short", day: "numeric"}), overdue: false, soon: diffDays <= 3};
+    return (
+        <Box className="inline-flex items-center gap-1 shrink-0" sx={{height: 20, px: 0.85, ...glassSurfaceSx({radius: 999, backgroundColor: tone.backgroundColor, borderColor: tone.borderColor, boxShadow: tone.boxShadow}), color: tone.color}}>
+            <EventIcon sx={{fontSize: 11}}/>
+            <Typography sx={PILL_LABEL_SX}>{isOverdue ? "Overdue" : deadline.label}</Typography>
+        </Box>
+    );
 }
 
-const TaskCard = forwardRef(function TaskCard({task, onTogglePin, onToggleDone, onDelete, onEditTitle, onAddSubtask, onToggleSubtask, onDeleteSubtask, ...rest}, ref) {
+const TaskCard = memo(function TaskCard({task, onTogglePin, onToggleDone, onDelete, onEditTitle, onAddSubtask, onToggleSubtask, onDeleteSubtask}) {
+
     const [editing, setEditing] = useState(false);
 
     const [draft, setDraft] = useState(task.title);
@@ -47,41 +96,40 @@ const TaskCard = forwardRef(function TaskCard({task, onTogglePin, onToggleDone, 
 
     const cancelledRef = useRef(false);
 
-    const subtasks = task.subtasks || [];
+    const subtasks = useMemo(() => (Array.isArray(task.subtasks) ? task.subtasks : []), [task.subtasks]);
 
-    const hasSubtasks = subtasks.length > 0;
+    const showExpand = subtasks.length > 0 || Boolean(onAddSubtask);
 
-    const canEditSubtasks = Boolean(onAddSubtask);
+    const deadline = useMemo(() => formatTaskDeadline(task.deadline), [task.deadline]);
 
-    const showExpand = hasSubtasks || canEditSubtasks;
+    const isOverdue = deadline?.overdue && !task.done;
 
-    const deadline = useMemo(() => formatDeadline(task.deadline), [task.deadline]);
+    const subtaskSummary = useMemo(() => (subtasks.length > 0 ? subtaskStats(subtasks) : null), [subtasks]);
 
-    const priorityMeta = PRIORITY[task.priority] || PRIORITY.low;
+    useEffect(() => {
+        if (!editing) setDraft(task.title);
+    }, [editing, task.title]);
 
-    const subtaskSummary = useMemo(() => {
-        if (!hasSubtasks) return null;
+    const startEdit = useCallback(() => {
 
-        const done = subtasks.filter((s) => s.done).length;
-
-        return {done, total: subtasks.length, complete: done === subtasks.length};
-    }, [subtasks, hasSubtasks]);
-
-    const startEdit = () => {
         setDraft(task.title);
 
         cancelledRef.current = false;
 
         setEditing(true);
-    };
 
-    const commitEdit = () => {
+    }, [task.title]);
+
+    const commitEdit = useCallback(() => {
+
         if (cancelledRef.current) {
+
             cancelledRef.current = false;
 
             setEditing(false);
 
             return;
+
         }
 
         const next = draft.trim();
@@ -89,101 +137,102 @@ const TaskCard = forwardRef(function TaskCard({task, onTogglePin, onToggleDone, 
         if (next && next !== task.title) onEditTitle(task.id, next);
 
         setEditing(false);
-    };
 
-    const cancelEdit = () => {
+    }, [draft, onEditTitle, task.id, task.title]);
+
+    const cancelEdit = useCallback(() => {
+
         cancelledRef.current = true;
 
         setDraft(task.title);
 
         setEditing(false);
-    };
 
-    const handleKeyDown = (e) => {
-        if (e.key === "Enter") {
-            e.preventDefault();
+    }, [task.title]);
 
-            e.currentTarget.blur();
-        } else if (e.key === "Escape") {
-            e.preventDefault();
-
-            cancelEdit();
-        }
-    };
+    const subtaskTone = subtaskSummary?.complete ? GLASS_TONES.success : GLASS_TONES.neutral;
 
     return (
-        <Card ref={ref} {...rest} sx={{position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", bgcolor: "background.paper", opacity: task.done ? 0.62 : 1, borderColor: task.isPinned ? "rgba(31,111,235,0.32)" : "divider", transition: "transform 0.22s cubic-bezier(0.4,0,0.2,1), box-shadow 0.22s cubic-bezier(0.4,0,0.2,1), border-color 0.22s, opacity 0.22s", "&:hover": {transform: "translateY(-3px)", borderColor: "rgba(31,111,235,0.32)", boxShadow: "0 14px 28px -10px rgba(15,24,40,0.16), 0 6px 14px -8px rgba(15,24,40,0.08)"}}}>
-            {/* Pinned badge */}
+        <Card sx={{...CARD_SX, opacity: task.done ? 0.62 : 1, borderColor: task.isPinned ? "rgba(31, 111, 235, 0.24)" : "divider"}}>
             {task.isPinned && (
-                <Box sx={{position: "absolute", top: 11, right: 11, width: 24, height: 24, borderRadius: "50%", background: "linear-gradient(135deg, #1F6FEB 0%, #4F8AF7 100%)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1, boxShadow: "0 2px 6px rgba(31,111,235,0.32)"}}>
-                    <PushPinIcon sx={{fontSize: 12, color: "#FFFFFF"}} />
-                </Box>
+                <div className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full inline-flex items-center justify-center z-[1]" style={PIN_BADGE_STYLE}>
+                    <PushPinIcon sx={{fontSize: 12, color: "#FFFFFF"}}/>
+                </div>
             )}
-
-            <CardContent sx={{flex: 1, display: "flex", flexDirection: "column", position: "relative", p: 2.25, pl: 2.75, pb: "12px !important", "&:last-child": {pb: "12px !important"}}}>
-                {/* Priority accent bar — scoped to content area, won't cross the divider */}
-                <PriorityBadge priority={task.priority} variant="bar" inset={10} />
-                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{mb: 1.25, pr: task.isPinned ? 3.5 : 0}}>
-                    <PriorityBadge priority={task.priority} variant="dot" />
-                    {deadline && (
-                        <Box sx={{display: "inline-flex", alignItems: "center", gap: 0.45, px: 0.95, py: 0.3, borderRadius: 999, bgcolor: deadline.overdue && !task.done ? "#FCE8E6" : deadline.soon ? "rgba(31,111,235,0.08)" : "rgba(15,24,40,0.04)", color: deadline.overdue && !task.done ? "error.main" : deadline.soon ? "primary.dark" : "text.secondary", flexShrink: 0}}>
-                            <EventIcon sx={{fontSize: 12}} />
-                            <Typography sx={{fontSize: 10.5, fontWeight: 600, fontFamily: '"JetBrains Mono", monospace', letterSpacing: "0.02em"}}>{deadline.overdue && !task.done ? "Overdue" : deadline.label}</Typography>
-                        </Box>
-                    )}
-                </Stack>
-
-                <Box sx={{flex: 1, minHeight: 0}}>
+            <CardContent sx={{p: 2.25, pl: 2.75, pb: "12px !important", flex: 1, display: "flex", flexDirection: "column", position: "relative"}}>
+                <PriorityBadge priority={task.priority} variant="bar" inset={10}/>
+                <div className="flex items-center gap-2 mb-2.5 min-h-[20px]" style={{paddingRight: task.isPinned ? 28 : 0}}>
+                    <PriorityBadge priority={task.priority} variant="dot"/>
+                    {deadline && <DeadlinePill deadline={deadline} isOverdue={isOverdue}/>}
+                </div>
+                <Box sx={{minHeight: 44}}>
                     {editing ? (
-                        <TextField value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitEdit} onKeyDown={handleKeyDown} autoFocus size="small" fullWidth variant="standard" inputProps={{"aria-label": "Edit task title", maxLength: 120}} />
+                        <TextField value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commitEdit} onKeyDown={(e) => {
+
+                                if (e.isComposing || e.nativeEvent?.isComposing) return;
+
+                                if (e.key === "Enter") {
+
+                                    e.preventDefault();
+
+                                    e.currentTarget.blur();
+
+                                } else if (e.key === "Escape") {
+
+                                    e.preventDefault();
+
+                                    cancelEdit();
+
+                                }
+                            }} autoFocus size="small" fullWidth variant="standard" slotProps={{htmlInput: {"aria-label": "Edit task title", maxLength: 120}}}
+                       />
                     ) : (
-                        <Typography variant="subtitle1" onDoubleClick={onEditTitle ? startEdit : undefined} sx={{fontWeight: 600, fontSize: "0.96rem", lineHeight: 1.4, letterSpacing: "-0.012em", color: "text.primary", textDecoration: task.done ? "line-through" : "none", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "break-word", cursor: onEditTitle ? "text" : "default"}}>
+                        <Typography variant="subtitle1" onDoubleClick={onEditTitle ? startEdit : undefined} sx={{...TITLE_SX_BASE, textDecoration: task.done ? "line-through" : "none", cursor: onEditTitle ? "text" : "default"}}>
                             {task.title}
                         </Typography>
                     )}
                 </Box>
-
-                <Stack direction="row" spacing={0.75} alignItems="center" sx={{mt: 1.25, minWidth: 0, flexWrap: "wrap", rowGap: 0.5}}>
-                    <Chip label={task.tag} size="small" variant="outlined" sx={{height: 22, fontSize: 11, fontWeight: 500, borderColor: "divider", color: "text.secondary", bgcolor: "rgba(15,24,40,0.025)", maxWidth: "100%", "& .MuiChip-label": {px: 1, overflow: "hidden", textOverflow: "ellipsis"}}} />
-                    {subtaskSummary && <Chip icon={<ChecklistIcon sx={{fontSize: 13}} />} label={`${subtaskSummary.done}/${subtaskSummary.total}`} size="small" sx={{height: 22, fontSize: 11, fontWeight: 700, fontFamily: '"JetBrains Mono", monospace', bgcolor: subtaskSummary.complete ? "#E6F4EA" : "rgba(15,24,40,0.05)", color: subtaskSummary.complete ? "success.main" : "text.secondary", border: "none", "& .MuiChip-icon": {color: subtaskSummary.complete ? "success.main" : "text.secondary", ml: 0.5, mr: -0.25}, "& .MuiChip-label": {px: 0.85}}} />}
-                </Stack>
+                <div className="flex items-center gap-1.5 flex-wrap mt-2.5" style={{rowGap: 4}}>
+                    <Chip label={task.tag} size="small" variant="outlined" sx={TAG_CHIP_SX}/>
+                    {subtaskSummary && (
+                        <Chip icon={<ChecklistIcon sx={{fontSize: 13}}/>} label={`${subtaskSummary.done}/${subtaskSummary.total}`} size="small" sx={{height: 22, fontSize: 11, fontWeight: 700, ...MONO_SX, ...glassSurfaceSx({radius: 999, backgroundColor: subtaskTone.backgroundColor, borderColor: subtaskTone.borderColor, boxShadow: subtaskTone.boxShadow}), color: subtaskTone.color, "& .MuiChip-icon": {color: subtaskTone.color, ml: 0.5, mr: -0.25}, "& .MuiChip-label": {px: 0.85}}}/>
+                    )}
+                </div>
             </CardContent>
-
-            <Divider sx={{borderColor: "divider"}} />
-
-            <Stack direction="row" alignItems="center" sx={{pl: 1.5, pr: 0.85, py: 0.4}}>
-                <StatusToggle checked={task.done} onChange={() => onToggleDone(task.id)} label={task.title} />
-                <Box sx={{flex: 1}} />
+            <Box className="flex items-center pl-3 pr-1 h-[42px]" sx={FOOTER_SX}>
+                <StatusToggle checked={task.done} onChange={() => onToggleDone(task.id)} label={task.title}/>
+                <div className="flex-1"/>
                 {showExpand && (
                     <Tooltip title={expanded ? "Hide subtasks" : "Show subtasks"}>
-                        <IconButton size="small" onClick={() => setExpanded((v) => !v)} aria-label={expanded ? "Collapse subtasks" : "Expand subtasks"} aria-expanded={expanded} sx={{color: expanded ? "primary.main" : "text.secondary", "&:hover": {bgcolor: "rgba(31,111,235,0.10)", color: "primary.main"}}}>
-                            <ExpandMoreIcon sx={{fontSize: 20, transform: expanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s"}} />
+                        <IconButton size="small" onClick={() => setExpanded((v) => !v)} aria-label={expanded ? "Collapse subtasks" : "Expand subtasks"} aria-expanded={expanded} sx={{...ACTION_SX, color: expanded ? "primary.main" : "text.secondary"}}>
+                            <ExpandMoreIcon sx={{...EXPAND_ICON_BASE_SX, transform: expanded ? "rotate(180deg)" : "rotate(0deg)"}}/>
                         </IconButton>
                     </Tooltip>
                 )}
                 {onEditTitle && !editing && (
                     <Tooltip title="Edit title">
-                        <IconButton size="small" onClick={startEdit} aria-label="Edit task title" sx={{color: "text.secondary", "&:hover": {bgcolor: "rgba(31,111,235,0.10)", color: "primary.main"}}}>
-                            <EditOutlinedIcon sx={{fontSize: 18}} />
+                        <IconButton size="small" onClick={startEdit} aria-label="Edit task title" sx={ACTION_SX}>
+                            <EditOutlinedIcon sx={{fontSize: 18}}/>
                         </IconButton>
                     </Tooltip>
                 )}
                 <Tooltip title={task.isPinned ? "Unpin" : "Pin to top"}>
-                    <IconButton size="small" onClick={() => onTogglePin(task.id)} aria-label={task.isPinned ? "Unpin task" : "Pin task"} sx={{color: task.isPinned ? "primary.main" : "text.secondary", "&:hover": {bgcolor: "rgba(31,111,235,0.10)", color: "primary.main"}}}>
-                        {task.isPinned ? <PushPinIcon sx={{fontSize: 18}} /> : <PushPinOutlinedIcon sx={{fontSize: 18}} />}
+                    <IconButton size="small" onClick={() => onTogglePin(task.id)} aria-label={task.isPinned ? "Unpin task" : "Pin task"} sx={{...ACTION_SX, color: task.isPinned ? "primary.main" : "text.secondary"}}>
+                        {task.isPinned ? <PushPinIcon sx={{fontSize: 18}}/> : <PushPinOutlinedIcon sx={{fontSize: 18}}/>}
                     </IconButton>
                 </Tooltip>
                 <Tooltip title="Delete">
-                    <IconButton size="small" onClick={() => onDelete(task.id)} aria-label="Delete task" sx={{color: "text.secondary", "&:hover": {bgcolor: "#FCE8E6", color: "error.main"}}}>
-                        <DeleteOutlineIcon sx={{fontSize: 18}} />
+                    <IconButton size="small" onClick={() => onDelete(task.id)} aria-label="Delete task" sx={DELETE_HOVER_SX}>
+                        <DeleteOutlinedIcon sx={{fontSize: 18}}/>
                     </IconButton>
                 </Tooltip>
-            </Stack>
-
+            </Box>
             {showExpand && (
-                <Collapse in={expanded} timeout={240} unmountOnExit>
-                    <SubtaskList taskId={task.id} subtasks={subtasks} onAddSubtask={onAddSubtask} onToggleSubtask={onToggleSubtask} onDeleteSubtask={onDeleteSubtask} />
-                </Collapse>
+                <div style={{display: "grid", gridTemplateRows: expanded ? "1fr" : "0fr", transition: tactileTransition("grid-template-rows"), willChange: expanded ? "grid-template-rows" : "auto"}}>
+                    <div style={{overflow: "hidden", minHeight: 0}}>
+                        {expanded && <SubtaskList taskId={task.id} subtasks={subtasks} onAddSubtask={onAddSubtask} onToggleSubtask={onToggleSubtask} onDeleteSubtask={onDeleteSubtask}/>}
+                    </div>
+                </div>
             )}
         </Card>
     );
